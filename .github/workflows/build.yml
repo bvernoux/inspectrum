@@ -18,7 +18,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Extract version
       id: version
       run: |
@@ -91,7 +91,7 @@ jobs:
     name: ${{ matrix.name }}-${{ matrix.qt }}
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     # === Linux Dependencies ===
     - name: Install dependencies (Linux)
@@ -240,7 +240,7 @@ jobs:
 
     # === Upload ===
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ env.PACKAGE_NAME }}-${{ matrix.name }}-${{ matrix.qt }}
         path: ${{ env.PACKAGE_NAME }}-*.tar.gz
@@ -272,14 +272,14 @@ jobs:
         apt-get update
         apt-get install -y --no-install-recommends git ca-certificates
 
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install dependencies
       run: |
         export DEBIAN_FRONTEND=noninteractive
         export TZ=UTC
         apt-get install -y --no-install-recommends \
-          cmake g++ pkg-config libfftw3-dev libliquid-dev libgl1-mesa-dev ${{ matrix.qt_pkg }}
+          build-essential cmake pkg-config libfftw3-dev libliquid-dev libgl1-mesa-dev ${{ matrix.qt_pkg }}
 
     - name: Configure
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -301,7 +301,7 @@ jobs:
         tar czf "$DIST.tar.gz" "$DIST"
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ env.PACKAGE_NAME }}-${{ matrix.name }}-${{ matrix.qt }}
         path: ${{ env.PACKAGE_NAME }}-*.tar.gz
@@ -317,7 +317,7 @@ jobs:
 
     steps:
     - name: Download all artifacts
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: artifacts/
 
