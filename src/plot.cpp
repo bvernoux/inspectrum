@@ -34,7 +34,7 @@ void Plot::invalidateEvent()
 
 }
 
-bool Plot::mouseEvent(QEvent::Type type, QMouseEvent *event)
+bool Plot::mouseEvent(QEvent::Type, QMouseEvent *)
 {
     return false;
 }
@@ -49,7 +49,7 @@ std::shared_ptr<AbstractSampleSource> Plot::output()
     return sampleSource;
 }
 
-void Plot::paintBack(QPainter &painter, QRect &rect, range_t<size_t> sampleRange)
+void Plot::paintBack(QPainter &painter, QRect &rect, range_t<size_t>)
 {
     painter.save();
     QPen pen(Qt::white, 1, Qt::DashLine);
@@ -58,12 +58,10 @@ void Plot::paintBack(QPainter &painter, QRect &rect, range_t<size_t> sampleRange
     painter.restore();
 }
 
-void Plot::paintMid(QPainter &painter, QRect &rect, range_t<size_t> sampleRange)
+void Plot::paintMid(QPainter &, QRect &, range_t<size_t>)
 {
-
 }
 
-void Plot::paintFront(QPainter &painter, QRect &rect, range_t<size_t> sampleRange)
+void Plot::paintFront(QPainter &, QRect &, range_t<size_t>)
 {
-
 }

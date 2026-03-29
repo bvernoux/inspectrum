@@ -1,0 +1,61 @@
+inspectrum ng v0.5.0
+====================
+
+Fork of inspectrum with 40 files changed (~3200 lines added).
+
+Features
+--------
+ 1. ThresholdPlot: bin/hex/ascii overlay on threshold waveform, export to clipboard/stdout
+ 2. Editable symbol rate, period, offset with SI suffix support (k, M, G)
+ 3. Auto detect symbol rate (ASK/OOK) via Schmitt trigger + run-length analysis
+ 4. Session save/load (.isession v0.5.0 JSON format)
+ 5. Drag & drop file loading
+ 6. Spectrogram Y zoom (frequency crop centered on tuner)
+ 7. FFT zero-padding (separate window/FFT size)
+ 8. Crop to tuner (physical height change, drag offset locking)
+ 9. Tuner panel: editable centre/bandwidth with SI, visibility toggle
+10. Export tuner-filtered with rational resampler (liquid-dsp msresamp_crcf)
+11. Export spectrogram to PNG (current view with top+bottom time scales)
+12. Cursor grid opacity slider
+13. Symbol count clamping to file bounds
+14. Cursor state preservation on disable/re-enable
+15. Auto-enable cursors on file load
+16. Tuner default center position
+17. View position (Pos X/Y editable, bookmarks with add/update/remove)
+18. Bookmarks saved in .isession, loadable from .json
+19. SI unit display and input for all Hz/Bd fields
+20. Bottom time scale (on screen and PNG export)
+21. View position preserved across FFT/zoom/zero-pad changes
+22. Bit order toggle (LSB first)
+
+Display: dynamic slider labels, render time stats (min/avg/max),
+native platform style (windowsvista/Fusion), SI formatted values,
+controls rearranged by workflow.
+
+Performance
+-----------
+- FFTW plan cache with FFTW_MEASURE + wisdom persistence
+- Pre-warm all FFT sizes at first startup (progress dialog)
+- Deferred tuner/zoom updates (150ms timer)
+- ThresholdPlot bit cache (dirty tracking)
+- SampleBuffer temp buffer reuse (grow-only)
+- Pre-allocated liquid-dsp objects (NCO, FIR filter, freqdem)
+- Adaptive tile size (~512KB/tile), 128MB caches with cost tracking
+- FNV-1a hash for tile cache keys
+- Precomputed constants (invN, logMultiplier, dBtoLinScale, powerRange)
+- Reusable linearBuf for averaging (exp2f/log2f instead of powf/log10f)
+- FFT normalization by windowSize (consistent across zero-pad levels)
+- Partial read support (zero-fill at EOF)
+
+Bug fixes
+---------
+Division-by-zero, integer overflow, null pointer guards, uninitialized members,
+bounds checks, iterator fix, type mismatches, tuner constraints, cursor paint.
+All -Wall -Wextra warnings resolved (excluding third-party liquid-dsp).
+
+Build
+-----
+MinGW: static linking (libgcc, libstdc++, -mwindows), Qt/runtime DLL bundling.
+FFTW before LIQUID link order for static libs.
+Wisdom file next to exe (fallback to AppLocalDataLocation on read-only installs).
+Portable: builds on Windows (MinGW), Linux, macOS.

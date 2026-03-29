@@ -20,20 +20,37 @@
 #pragma once
 
 #include <fftw3.h>
+#include <functional>
+#include <mutex>
+#include <unordered_map>
+#include <string>
 
 class FFT
 {
 public:
-    FFT(int size);
-    ~FFT();
-    void process(void *dest, void *source);
-    int getSize() {
-        return fftSize;
-    }
+	FFT(int size);
+	~FFT();
+	void process(void *dest, void *source);
+	int getSize() {
+		return fftSize;
+	}
+
+	/* wisdom + plan cache — call once at startup */
+	static void initWisdom();
+	static void saveWisdom();
+	static bool needsPreWarm();
+	static void preWarm(std::function<void(int, int)> progress = nullptr);
 
 private:
-    int fftSize;
-    fftwf_complex *fftwIn = nullptr;
-    fftwf_complex *fftwOut = nullptr;
-    fftwf_plan fftwPlan = nullptr;
+	int fftSize;
+	fftwf_complex *fftwIn = nullptr;
+	fftwf_plan fftwPlan = nullptr;
+
+	/* shared plan cache: size → FFTW_MEASURE plan */
+	static std::mutex cacheMutex;
+	static std::unordered_map<int, fftwf_plan> planCache;
+	static std::string wisdomPath;
+	static bool wisdomDirty;
+
+	static fftwf_plan getCachedPlan(int size, fftwf_complex *in);
 };

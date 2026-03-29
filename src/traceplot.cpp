@@ -30,13 +30,14 @@ TracePlot::TracePlot(std::shared_ptr<AbstractSampleSource> source) : Plot(source
 
 void TracePlot::paintMid(QPainter &painter, QRect &rect, range_t<size_t> sampleRange)
 {
-    if (sampleRange.length() == 0) return;
+    if (sampleRange.length() == 0 || rect.width() <= 0) return;
 
-    int samplesPerColumn = std::max(1UL, sampleRange.length() / rect.width());
-    int samplesPerTile = tileWidth * samplesPerColumn;
+    size_t samplesPerColumn = std::max((size_t)1, sampleRange.length() / rect.width());
+    size_t samplesPerTile = (size_t)tileWidth * samplesPerColumn;
+    if (samplesPerTile == 0) return;
     size_t tileID = sampleRange.minimum / samplesPerTile;
-    size_t tileOffset = sampleRange.minimum % samplesPerTile; // Number of samples to skip from first image tile
-    int xOffset = tileOffset / samplesPerColumn; // Number of columns to skip from first image tile
+    size_t tileOffset = sampleRange.minimum % samplesPerTile;
+    int xOffset = (int)(tileOffset / samplesPerColumn);
 
     // Paint first (possibly partial) tile
     painter.drawPixmap(
@@ -45,8 +46,9 @@ void TracePlot::paintMid(QPainter &painter, QRect &rect, range_t<size_t> sampleR
         QRect(xOffset, 0, tileWidth - xOffset, height())
     );
 
-    // Paint remaining tiles
-    for (int x = tileWidth - xOffset; x < rect.right(); x += tileWidth) {
+    // Paint remaining tiles (use rect.x() + rect.width() to include last pixel)
+    int xEnd = rect.x() + rect.width();
+    for (int x = tileWidth - xOffset; x < xEnd; x += tileWidth) {
         painter.drawPixmap(
             QRect(x, rect.y(), tileWidth, height()),
             getTile(tileID++, samplesPerTile)

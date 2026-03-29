@@ -24,7 +24,7 @@ PhaseDemod::PhaseDemod(std::shared_ptr<SampleSource<std::complex<float>>> src) :
 
 }
 
-void PhaseDemod::work(void *input, void *output, int count, size_t sampleid)
+void PhaseDemod::work(void *input, void *output, int count, size_t)
 {
     auto in = static_cast<std::complex<float>*>(input);
     auto out = static_cast<float*>(output);

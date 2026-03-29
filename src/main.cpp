@@ -19,19 +19,48 @@
 
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QProgressDialog>
+#include <QStyleFactory>
 
+#include "fft.h"
 #include "mainwindow.h"
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    a.setApplicationName("inspectrum");
+
+    /* use native platform style for modern look */
+    if (QStyleFactory::keys().contains("windowsvista"))
+        a.setStyle("windowsvista");
+    else if (QStyleFactory::keys().contains("Fusion"))
+        a.setStyle("Fusion");
+    a.setApplicationName(APP_NAME);
+    a.setApplicationVersion(APP_VERSION);
     a.setOrganizationName("inspectrum");
+
+    FFT::initWisdom();
+
+    if (FFT::needsPreWarm()) {
+        QProgressDialog progress("Optimizing FFT plans (first run)...",
+                                 QString(), 0, 16);
+        progress.setWindowModality(Qt::ApplicationModal);
+        progress.setMinimumDuration(0);
+        progress.setValue(0);
+        QApplication::processEvents();
+
+        FFT::preWarm([&progress](int step, int total) {
+            progress.setMaximum(total);
+            progress.setValue(step);
+            QApplication::processEvents();
+        });
+    } else {
+        FFT::preWarm();
+    }
 
     MainWindow mainWin;
 
     QCommandLineParser parser;
-    parser.setApplicationDescription("spectrum viewer");
+    parser.setApplicationDescription(APP_NAME " - spectrum viewer");
     parser.addHelpOption();
     parser.addPositionalArgument("file", QCoreApplication::translate("main", "File to view."));
 
@@ -68,5 +97,7 @@ int main(int argc, char *argv[])
     }
 
     mainWin.show();
-    return a.exec();
+    int ret = a.exec();
+    FFT::saveWisdom();
+    return ret;
 }

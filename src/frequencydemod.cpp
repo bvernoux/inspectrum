@@ -23,16 +23,30 @@
 
 FrequencyDemod::FrequencyDemod(std::shared_ptr<SampleSource<std::complex<float>>> src) : SampleBuffer(src)
 {
-
 }
 
-void FrequencyDemod::work(void *input, void *output, int count, size_t sampleid)
+FrequencyDemod::~FrequencyDemod()
+{
+    if (fdem)
+        freqdem_destroy(fdem);
+}
+
+void FrequencyDemod::work(void *input, void *output, int count, size_t)
 {
     auto in = static_cast<std::complex<float>*>(input);
     auto out = static_cast<float*>(output);
-    freqdem fdem = freqdem_create(relativeBandwidth() / 2.0);
-    for (int i = 0; i < count; i++) {
-        freqdem_demodulate(fdem, in[i], &out[i]);
+
+    /* recreate only if bandwidth changed, otherwise reset */
+    float bw = relativeBandwidth() / 2.0f;
+    if (!fdem || bw != lastBw) {
+        if (fdem)
+            freqdem_destroy(fdem);
+        fdem = freqdem_create(bw);
+        lastBw = bw;
+    } else {
+        freqdem_reset(fdem);
     }
-    freqdem_destroy(fdem);
+
+    for (int i = 0; i < count; i++)
+        freqdem_demodulate(fdem, in[i], &out[i]);
 }

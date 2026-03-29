@@ -21,6 +21,7 @@
 
 #include <QCache>
 #include <QString>
+#include <QTimer>
 #include <QWidget>
 #include "fft.h"
 #include "inputsource.h"
@@ -34,7 +35,6 @@
 #include <vector>
 
 class AnnotationLocation;
-
 
 class TileCacheKey
 {
@@ -72,43 +72,98 @@ public:
     std::shared_ptr<SampleSource<std::complex<float>>> input() { return inputSource; };
     void setSampleRate(double sampleRate);
     bool tunerEnabled();
+    void setTunerVisible(bool visible);
+    bool isTunerVisible() { return tunerVisible; }
+    int tunerCentre() { return tuner.centre(); }
+    int tunerDeviation() { return tuner.deviation(); }
+    void setTunerCentre(int centre) { tuner.setCentre(centre); }
+    void setTunerDeviation(int dev) { tuner.setDeviation(dev); }
+    int getFFTSize() { return fftSize; }
+    int getNativePlotHeight();
+    using Plot::setHeight;
+    int getLinesPerTile();
+    double tunerCentreHz() {
+        return (fftSize > 0) ? (0.5 - tuner.centre() / (double)fftSize) * sampleRate : 0;
+    }
+    double tunerBandwidthHz() {
+        return (fftSize > 0) ? tuner.deviation() * 2.0 / fftSize * sampleRate : 0;
+    }
     void enableScales(bool enabled);
+    void enableMaskOutOfBand(bool enabled);
     void enableAnnotations(bool enabled);
     bool isAnnotationsEnabled();
     QString *mouseAnnotationComment(const QMouseEvent *event);
 
+signals:
+    void tunerInfoChanged(double centreHz, double bandwidthHz);
+    void renderTimeChanged(int ms);
+
 public slots:
+    void tunerFullUpdate();
+    void zoomRenderNow();
     void setFFTSize(int size);
+    void setZeroPad(int factor);
+    void setZoomY(int level);
     void setPowerMax(int power);
     void setPowerMin(int power);
     void setZoomLevel(int zoom);
     void tunerMoved();
+    void setAveraging(int count);
 
 private:
     const int linesPerGraduation = 50;
-    static const int tileSize = 65536; // This must be a multiple of the maximum FFT size
+    static const int targetLinesPerTile = 64; // target FFT lines per tile
 
     std::shared_ptr<SampleSource<std::complex<float>>> inputSource;
     std::vector<AnnotationLocation> visibleAnnotationLocations;
     std::unique_ptr<FFT> fft;
     std::unique_ptr<float[]> window;
+    std::unique_ptr<std::complex<float>[]> fftBuffer;
     QCache<TileCacheKey, QPixmap> pixmapCache;
-    QCache<TileCacheKey, std::array<float, tileSize>> fftCache;
+    QCache<TileCacheKey, std::vector<float>> fftCache;
     uint colormap[256];
 
-    int fftSize;
+    int fftSize;        /* actual FFT length (windowSize * zeroPad) */
+    int windowSize;     /* number of IQ samples per FFT window */
+    int zeroPad = 1;    /* zero-pad factor: 1, 2, 4, 8 */
     int zoomLevel;
+    int yZoomLevel = 1;
     float powerMax;
     float powerMin;
+
+    /* precomputed constants (updated when settings change) */
+    float invN = 1.0f;                         /* 1.0 / windowSize */
+    static constexpr float logMultiplier = 3.321928094887362f; /* 10 / log2(10) */
+    static constexpr float dBtoLinScale = 0.33219280948873626f; /* log2(10) / 10 */
+    static constexpr float linToDBScale = 3.321928094887362f;   /* 10 / log2(10) */
+    float powerRange = -1.0f;                  /* -1.0 / abs(powerMin - powerMax) */
+
+    /* reusable buffers for enhancement (avoid per-tile allocation) */
+    std::vector<float> linearBuf;              /* dB→linear conversion */
     double sampleRate;
     bool frequencyScaleEnabled;
     bool sigmfAnnotationsEnabled;
+    bool maskOutOfBand = false;
+    bool tunerVisible = true;
+    bool cropDragging = false;
+    int cropDragOffset = 0;
 
     Tuner tuner;
     std::shared_ptr<TunerTransform> tunerTransform;
+    QTimer tunerUpdateTimer;
+    QTimer zoomRenderTimer;
+    bool zoomDeferred = false;
+    int lastRenderMs = 0;  /* measured render time for adaptive delay */
 
+    /* enhancement mode */
+    int avgCount = 1;           /* averaging factor (1 = off) */
+    QCache<TileCacheKey, std::vector<float>> enhancedCache;
+
+    void updateHeight();
+    void updatePowerRange();
     QPixmap* getPixmapTile(size_t tile);
     float* getFFTTile(size_t tile);
+    float* getEnhancedTile(size_t tile);
     void getLine(float *dest, size_t sample);
     int getStride();
     float getTunerPhaseInc();

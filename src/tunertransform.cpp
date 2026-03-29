@@ -21,34 +21,62 @@
 #include <liquid/liquid.h>
 #include "util.h"
 
-TunerTransform::TunerTransform(std::shared_ptr<SampleSource<std::complex<float>>> src) : SampleBuffer(src), frequency(0), bandwidth(1.), taps{1.0f}
+TunerTransform::TunerTransform(std::shared_ptr<SampleSource<std::complex<float>>> src)
+    : SampleBuffer(src), frequency(0), bandwidth(1.), taps{1.0f}
 {
+    nco = nco_crcf_create(LIQUID_NCO);
+    rebuildFilter();
+}
 
+TunerTransform::~TunerTransform()
+{
+    if (nco)
+        nco_crcf_destroy(nco);
+    if (filter)
+        firfilt_crcf_destroy(filter);
+}
+
+void TunerTransform::rebuildFilter()
+{
+    if (filter)
+        firfilt_crcf_destroy(filter);
+    filter = firfilt_crcf_create(taps.data(), taps.size());
+    filterDirty = false;
 }
 
 void TunerTransform::work(void *input, void *output, int count, size_t sampleid)
 {
     auto out = static_cast<std::complex<float>*>(output);
-    auto temp = std::make_unique<std::complex<float>[]>(count);
 
-    // Mix down
-    nco_crcf mix = nco_crcf_create(LIQUID_NCO);
-    nco_crcf_set_phase(mix, fmodf(frequency * sampleid, Tau));
-    nco_crcf_set_frequency(mix, frequency);
-    nco_crcf_mix_block_down(mix,
+    /* grow mix buffer if needed (no realloc if already large enough) */
+    if ((int)mixBuf.size() < count)
+        mixBuf.resize(count);
+
+    /* mix down using pre-allocated NCO */
+    nco_crcf_set_phase(nco, fmodf(frequency * sampleid, Tau));
+    nco_crcf_set_frequency(nco, frequency);
+    nco_crcf_mix_block_down(nco,
                             static_cast<std::complex<float>*>(input),
-                            temp.get(),
+                            mixBuf.data(),
                             count);
-    nco_crcf_destroy(mix);
 
-    // Filter
-    firfilt_crcf filter = firfilt_crcf_create(taps.data(), taps.size());
-    for (int i = 0; i < count; i++)
-    {
-        firfilt_crcf_push(filter, temp[i]);
+    /* rebuild filter if taps changed, otherwise just reset state */
+    if (filterDirty)
+        rebuildFilter();
+    else
+        firfilt_crcf_reset(filter);
+
+    /* filter */
+    for (int i = 0; i < count; i++) {
+        firfilt_crcf_push(filter, mixBuf[i]);
         firfilt_crcf_execute(filter, &out[i]);
     }
-    firfilt_crcf_destroy(filter);
+
+    /* apply gain */
+    if (gain != 1.0f) {
+        for (int i = 0; i < count; i++)
+            out[i] *= gain;
+    }
 }
 
 void TunerTransform::setFrequency(float frequency)
@@ -59,6 +87,12 @@ void TunerTransform::setFrequency(float frequency)
 void TunerTransform::setTaps(std::vector<float> taps)
 {
     this->taps = taps;
+    filterDirty = true;
+}
+
+void TunerTransform::setGain(float g)
+{
+    this->gain = g;
 }
 
 float TunerTransform::relativeBandwidth() {

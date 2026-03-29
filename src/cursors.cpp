@@ -103,7 +103,7 @@ void Cursors::leaveEvent()
     }
 }
 
-void Cursors::paintFront(QPainter &painter, QRect &rect, range_t<size_t> sampleRange)
+void Cursors::paintFront(QPainter &painter, QRect &rect, range_t<size_t>)
 {
     painter.save();
 
@@ -116,10 +116,12 @@ void Cursors::paintFront(QPainter &painter, QRect &rect, range_t<size_t> sampleR
     );
 
     // Draw vertical edges for individual segments
-    painter.setPen(QPen(Qt::gray, 1, Qt::DashLine));
-    for (long i = 1; i < segmentCount; i++) {
-        int pos = minCursor->pos() + (i * cursorRect.width() / segmentCount);
-        painter.drawLine(pos, rect.top(), pos, rect.bottom());
+    if (gridAlpha > 0 && segmentCount > 0 && cursorRect.width() > 0) {
+        painter.setPen(QPen(QColor(128, 128, 128, gridAlpha), 1, Qt::DashLine));
+        for (long i = 1; i < segmentCount; i++) {
+            int pos = minCursor->pos() + (i * cursorRect.width() / segmentCount);
+            painter.drawLine(pos, rect.top(), pos, rect.bottom());
+        }
     }
 
     // Draw vertical edges

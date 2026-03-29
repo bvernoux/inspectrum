@@ -20,6 +20,7 @@
 #pragma once
 
 #include "samplebuffer.h"
+#include <liquid/liquid.h>
 #include <vector>
 
 class TunerTransform : public SampleBuffer<std::complex<float>, std::complex<float>>
@@ -27,13 +28,24 @@ class TunerTransform : public SampleBuffer<std::complex<float>, std::complex<flo
 private:
     float frequency;
     float bandwidth;
+    float gain = 1.0f;
     std::vector<float> taps;
+
+    /* pre-allocated liquid-dsp objects — avoid malloc/free per work() call */
+    nco_crcf nco = nullptr;
+    firfilt_crcf filter = nullptr;
+    std::vector<std::complex<float>> mixBuf;
+    bool filterDirty = true;
+
+    void rebuildFilter();
 
 public:
     TunerTransform(std::shared_ptr<SampleSource<std::complex<float>>> src);
+    ~TunerTransform();
     void work(void *input, void *output, int count, size_t sampleid) override;
     void setFrequency(float frequency);
     void setTaps(std::vector<float> taps);
+    void setGain(float gain);
     void setRelativeBandwith(float bandwidth);
     float relativeBandwidth() override;
 };

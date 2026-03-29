@@ -19,8 +19,10 @@
 
 #pragma once
 
+#include <QComboBox>
 #include <QDockWidget>
 #include <QFormLayout>
+#include <QJsonArray>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSlider>
@@ -39,11 +41,33 @@ public:
 signals:
     void fftOrZoomChanged(int fftSize, int zoomLevel);
     void openFile(QString fileName);
+    void loadSessionFile(QString fileName);
+    void symbolRateChanged(double rate);
+    void saveSession();
+    void autoDetectRate();
+    void lsbFirstChanged(bool lsb);
+    void periodChanged(double seconds);
+    void offsetChanged(double seconds);
+    void tunerCentreEdited(double hz);
+    void tunerBandwidthEdited(double hz);
+    void bookmarkSelected(double timeSec, double freqHz);
+    void avgChanged(int level);
+    void tunerVisibleChanged(bool visible);
+    void viewPosXEdited(double timeSec);
+    void viewPosYEdited(double freqHz);
 
 public slots:
-    void timeSelectionChanged(float time);
+    void timeSelectionChanged(float time, float offset);
     void zoomIn();
     void zoomOut();
+    void tunerInfoChanged(double centreHz, double bandwidthHz);
+    void renderTimeChanged(int ms);
+    void resetRenderStats();
+    void viewPositionChanged(double timeSec, double freqHz);
+    void addBookmark();
+    void removeBookmark();
+    void editBookmark();
+    void onBookmarkActivated(int index);
     void enableAnnotations(bool enabled);
 
 private slots:
@@ -61,19 +85,63 @@ private:
     void fftOrZoomChanged(void);
 
 public:
+    QLineEdit *viewPosXEdit;
+    QLineEdit *viewPosYEdit;
+    QComboBox *bookmarkCombo;
     QPushButton *fileOpenButton;
+    QPushButton *saveSessionButton;
     QLineEdit *sampleRate;
     QSlider *fftSizeSlider;
+    QLabel *fftSizeLabel;
     QSlider *zoomLevelSlider;
+    QLabel *zoomLabel;
+    QSlider *zeroPadSlider;
+    QLabel *zeroPadLabel;
+    QSlider *zoomYSlider;
+    QLabel *zoomYLabel;
     QSlider *powerMaxSlider;
+    QLabel *powerMaxLabel;
     QSlider *powerMinSlider;
+    QLabel *powerMinLabel;
     QCheckBox *cursorsCheckBox;
+    QSlider *cursorGridSlider;
+    QLabel *gridOpacityLabel;
     QSpinBox *cursorSymbolsSpinBox;
+    QLineEdit *offsetEdit;
     QLabel *rateLabel;
-    QLabel *periodLabel;
-    QLabel *symbolRateLabel;
+    QLineEdit *periodEdit;
+    QLineEdit *symbolRateEdit;
     QLabel *symbolPeriodLabel;
+    QPushButton *autoDetectButton;
+    QLabel *detectStatusLabel;
+    QCheckBox *lsbFirstCheckBox;
+    QLineEdit *tunerCentreEdit;
+    QLineEdit *tunerBandwidthEdit;
+    QCheckBox *maskOutOfBandCheckBox;
+    QCheckBox *tunerVisibleCheckBox;
+    QLabel *renderTimeLabel;
+    QPushButton *renderResetButton;
+    struct Bookmark {
+        QString name;
+        double timeSec;
+        double freqHz;
+    };
+    QList<Bookmark> bookmarks;
+    double currentTimeSec = 0;
+    double currentFreqHz = 0;
+    void saveBookmarks();
+    void loadBookmarks();
+    void loadBookmarksFile(const QString &path);
+    QJsonArray getBookmarksJson();
+    void setBookmarksJson(const QJsonArray &arr);
+
+    int renderMin = INT_MAX, renderMax = 0;
+    double renderSum = 0;
+    int renderCount = 0;
     QCheckBox *scalesCheckBox;
     QCheckBox *annosCheckBox;
     QCheckBox *commentsCheckBox;
+
+    QSlider *avgSlider;
+    QLabel *avgLabel;
 };

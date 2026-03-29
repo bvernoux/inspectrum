@@ -1,59 +1,87 @@
-# inspectrum
-inspectrum is a tool for analysing captured signals, primarily from software-defined radio receivers.
+# inspectrum ng
 
-![inspectrum screenshot](/screenshot.jpg)
+inspectrum ng (next generation) is a fork of [inspectrum](https://github.com/miek/inspectrum) for analysing captured signals from software-defined radio receivers.
 
 ## Features
- * Large (100GB+) file support
- * Spectrogram with zoom/pan
- * Plots of amplitude, frequency, phase and IQ samples
- * Cursors for measuring period, symbol rate and extracting symbols
- * Export of selected time period, filtered samples and demodulated data
 
-## Install
-### Linux
-Install inspectrum with your package manager, it should be present in most distros.
-
-### macOS
- * [Homebrew](https://formulae.brew.sh/formula/inspectrum)
- * [MacPorts](https://ports.macports.org/port/inspectrum/)
-
-## Windows
- * [radioconda](https://github.com/ryanvolz/radioconda)
- * [conda](https://anaconda.org/conda-forge/inspectrum)
+ * Large (100GB+) file support with memory-mapped I/O
+ * Spectrogram with zoom/pan, zero-padding, Y zoom, averaging
+ * Plots of amplitude, frequency, phase and threshold with binary/hex/ASCII overlay
+ * Cursors with symbol rate detection (ASK/OOK), grid opacity, state preservation
+ * Tuner with editable centre frequency and bandwidth, crop-to-tuner, visibility toggle
+ * Session save/load (.isession) with full state including bookmarks
+ * Export: selected samples, tuner-filtered with resampling, spectrogram to PNG
+ * Drag & drop file loading
+ * SI unit display and input (k, M, G suffixes)
+ * FFTW wisdom with pre-warmed plans for fast startup
+ * Native platform UI style (Windows Vista / Fusion)
 
 ## Build from source
+
 ### Prerequisites
 
- * cmake >= 3.1
+ * cmake >= 3.5
  * fftw 3.x
  * [liquid-dsp](https://github.com/jgaeddert/liquid-dsp) >= v1.3.0
  * pkg-config
- * qt5
+ * Qt5 or Qt6
 
-### Build instructions
+### Linux / macOS
 
-Build instructions can be found here: https://github.com/miek/inspectrum/wiki/Build
+```
+mkdir build && cd build
+cmake ../
+make
+```
+
+### Windows (MinGW64 / MSYS2)
+
+```
+mkdir build && cd build
+cmake ../ -G "Ninja"
+ninja
+```
+
+### Windows (Visual Studio 2022)
+
+```
+mkdir build && cd build
+cmake ../ -G "Visual Studio 17 2022" -A x64
+cmake --build . --config Release
+```
 
 ### Run
 
     ./inspectrum [filename]
 
-## Input
-inspectrum supports the following file types:
+Options:
+
+    -r, --rate <Hz>     Set sample rate
+    -f, --format <fmt>  Set file format (cfile, cs8, cu8, cs16, sigmf-meta, etc.)
+
+## Input formats
+
  * `*.sigmf-meta, *.sigmf-data` - SigMF recordings
- * `*.cf32`, `*.fc32`, `*.cfile` - Complex 32-bit floating point samples (GNU Radio, osmocom_fft)
- * `*.cf64`, `*.fc64` - Complex 64-bit floating point samples
- * `*.cs32`, `*.sc32`, `*.c32` - Complex 32-bit signed integer samples (SDRAngel)
- * `*.cs16`, `*.sc16`, `*.c16` - Complex 16-bit signed integer samples (BladeRF)
- * `*.cs8`, `*.sc8`, `*.c8` - Complex 8-bit signed integer samples (HackRF)
- * `*.cu8`, `*.uc8` - Complex 8-bit unsigned integer samples (RTL-SDR)
- * `*.f32` - Real 32-bit floating point samples
- * `*.f64` - Real 64-bit floating point samples (MATLAB)
- * `*.s16` - Real 16-bit signed integer samples
- * `*.s8` - Real 8-bit signed integer samples
- * `*.u8` - Real 8-bit unsigned integer samples
+ * `*.cf32`, `*.fc32`, `*.cfile` - Complex 32-bit floating point (GNU Radio, osmocom_fft)
+ * `*.cf64`, `*.fc64` - Complex 64-bit floating point
+ * `*.cs32`, `*.sc32`, `*.c32` - Complex 32-bit signed integer (SDRAngel)
+ * `*.cs16`, `*.sc16`, `*.c16` - Complex 16-bit signed integer (BladeRF)
+ * `*.cs8`, `*.sc8`, `*.c8` - Complex 8-bit signed integer (HackRF)
+ * `*.cu8`, `*.uc8` - Complex 8-bit unsigned integer (RTL-SDR)
+ * `*.f32` - Real 32-bit floating point
+ * `*.f64` - Real 64-bit floating point
+ * `*.s16` - Real 16-bit signed integer
+ * `*.s8` - Real 8-bit signed integer
+ * `*.u8` - Real 8-bit unsigned integer
+ * `*.isession` - inspectrum ng session file
+ * `*.json` - Bookmarks file
 
-If an unknown file extension is loaded, inspectrum will default to `*.cf32`.
+Unknown extensions default to `*.cf32`. 64-bit samples are truncated to 32-bit internally.
 
-Note: 64-bit samples will be truncated to 32-bit before processing, as inspectrum only supports 32-bit internally.
+## Session files
+
+inspectrum ng saves/loads complete application state to `.isession` JSON files (version 0.5.0 format). Sessions include signal file path, spectrogram settings, tuner position, cursor state, bookmarks, derived plots, and window layout.
+
+## License
+
+GPL v3 -- see original [inspectrum](https://github.com/miek/inspectrum) for details.

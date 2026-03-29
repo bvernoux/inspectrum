@@ -19,33 +19,32 @@
 
 #pragma once
 
-#include <QMouseEvent>
-#include <QObject>
-#include <QPoint>
-#include "util.h"
+#include "traceplot.h"
+#include "samplesource.h"
 
-class Cursor : public QObject
+class ThresholdPlot : public TracePlot
 {
-    Q_OBJECT
+	Q_OBJECT
 
 public:
-    Cursor(Qt::Orientation orientation, Qt::CursorShape mouseCursorShape, QObject * parent);
-    int pos();
-    void setPos(int newPos);
-    bool isDragging() const { return dragging; }
-    bool mouseEvent(QEvent::Type type, QMouseEvent *event);
-    void leaveEvent();
+	ThresholdPlot(std::shared_ptr<AbstractSampleSource> source);
+	void paintFront(QPainter &painter, QRect &rect,
+			range_t<size_t> sampleRange) override;
+	void setCursorInfo(bool enabled, range_t<size_t> selectedSamples,
+			   int segments);
+	void setLsbFirst(bool lsb) { lsbFirst = lsb; bitsCacheDirty = true; }
+	bool isLsbFirst() const { return lsbFirst; }
 
-signals:
-    void posChanged();
+	std::vector<int> extractBits();
+	QString getBinaryString();
+	QString getHexString();
+	QString getAsciiString();
 
 private:
-    int fromPoint(QPoint point);
-    bool pointOverCursor(QPoint point);
-
-    Qt::Orientation orientation;
-    Qt::CursorShape cursorShape;
-    bool dragging = false;
-    bool cursorOverriden = false;
-    int cursorPosition = 0;
+	bool cursorsActive = false;
+	range_t<size_t> cursorSamples = {0, 0};
+	int segmentCount = 1;
+	bool lsbFirst = false;
+	bool bitsCacheDirty = true;
+	std::vector<int> cachedBits;
 };

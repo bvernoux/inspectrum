@@ -20,6 +20,8 @@
 #pragma once
 
 #include <QGraphicsView>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QPaintEvent>
 
 #include "cursors.h"
@@ -27,7 +29,21 @@
 #include "plot.h"
 #include "samplesource.h"
 #include "spectrogramplot.h"
+#include "thresholdplot.h"
 #include "traceplot.h"
+
+struct DerivedPlotInfo {
+	int parentIndex;
+	QString typeName;
+};
+
+enum DemodMode { DemodAmplitude = 0, DemodFrequency = 1, DemodPhase = 2 };
+
+struct DetectResult {
+	double rate = 0;
+	int transitions = 0;
+	QString status;
+};
 
 class PlotView : public QGraphicsView, Subscriber
 {
@@ -38,22 +54,53 @@ public:
     void setSampleRate(double rate);
 
 signals:
-    void timeSelectionChanged(float time);
+    void timeSelectionChanged(float time, float offset);
+    void segmentsChanged(int segments);
+    void tunerChanged(double centreHz, double bandwidthHz);
+    void renderTimeChanged(int ms);
+    void viewPositionChanged(double timeSec, double freqHz);
     void zoomIn();
     void zoomOut();
 
 public slots:
     void cursorsMoved();
     void enableCursors(bool enabled);
+    void resetCursorState();
+    void setCursorGridOpacity(int opacity);
     void enableScales(bool enabled);
     void enableAnnotations(bool enabled);
     void enableAnnotationCommentsTooltips(bool enabled);
     void invalidateEvent() override;
     void repaint();
     void setCursorSegments(int segments);
+    void setSegmentsOnly(int segments);
+    void setSymbolRate(double rate);
+    void setPeriod(double seconds);
+    void setOffset(double seconds);
+    void restoreSessionPlots(const QJsonArray &plotsArray);
+    void refreshThresholdPlots();
+    void setSelectedSamples(range_t<size_t> samples);
+    void setScrollPosition(int hValue, int vValue);
+    range_t<size_t> getSelectedSamples() { return selectedSamples; }
+    QJsonArray getDerivedPlotsState();
+    int getTunerCentre();
+    int getTunerDeviation();
+    void setTunerPosition(int centre, int deviation);
+    void setTunerCentreHz(double hz);
+    void setTunerBandwidthHz(double hz);
     void setFFTAndZoom(int fftSize, int zoomLevel);
+    void setZeroPad(int level);
+    void setZoomY(int level);
+    void setCropToTuner(bool enabled);
+    void setTunerVisible(bool visible);
+    void jumpToBookmark(double timeSec, double freqHz);
+    void jumpToTime(double timeSec);
+    void jumpToFreq(double freqHz);
+    DetectResult autoDetectSymbolRate(DemodMode mode);
+    void setLsbFirst(bool lsb);
     void setPowerMin(int power);
     void setPowerMax(int power);
+    void setAveraging(int count);
 
 protected:
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -70,16 +117,19 @@ private:
     SampleSource<std::complex<float>> *mainSampleSource = nullptr;
     SpectrogramPlot *spectrogramPlot = nullptr;
     std::vector<std::unique_ptr<Plot>> plots;
-    range_t<size_t> viewRange;
-    range_t<size_t> selectedSamples;
-    int zoomPos;
-    size_t zoomSample;
+    std::vector<DerivedPlotInfo> derivedPlotInfos;
+    range_t<size_t> viewRange = {0, 0};
+    range_t<size_t> selectedSamples = {0, 0};
+    int zoomPos = 0;
+    size_t zoomSample = 0;
 
     int fftSize = 1024;
     int zoomLevel = 1;
-    int powerMin;
-    int powerMax;
-    bool cursorsEnabled;
+    int powerMin = -100;
+    int powerMax = 0;
+    bool cursorsEnabled = false;
+    bool hadCursors = false;
+    range_t<size_t> savedSelectedSamples = {0, 0};
     double sampleRate = 0.0;
     bool timeScaleEnabled;
     int scrollZoomStepsAccumulated = 0;
@@ -87,7 +137,12 @@ private:
 
     void addPlot(Plot *plot);
     void emitTimeSelection();
+    void updateThresholdPlots();
+    void saveViewPosition(double &timeSec, double &freqHz);
+    void restoreViewPosition(double timeSec, double freqHz);
     void extractSymbols(std::shared_ptr<AbstractSampleSource> src, bool toClipboard);
+    void exportTunerFiltered();
+    void exportSpectrogramPng();
     void exportSamples(std::shared_ptr<AbstractSampleSource> src);
     template<typename SOURCETYPE> void exportSamples(std::shared_ptr<AbstractSampleSource> src);
     int plotsHeight();

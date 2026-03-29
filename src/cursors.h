@@ -39,6 +39,7 @@ public:
     range_t<int> selection();
     void setSegments(int segments);
     void setSelection(range_t<int> selection);
+    void setGridOpacity(int opacity) { gridAlpha = opacity; }
 
 public slots:
     void cursorMoved();
@@ -56,4 +57,5 @@ private:
     QPoint dragPos;                // keep track of dragging distance
     bool cursorOverride = false;   // used to record if cursor is overridden
     bool dragging = false;         // record if mouse is dragging
+    int gridAlpha = 80;             // grid line opacity (0-255)
 };

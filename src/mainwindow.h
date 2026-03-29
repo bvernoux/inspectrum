@@ -19,6 +19,8 @@
 
 #pragma once
 
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QMainWindow>
 #include <QScrollArea>
 #include "spectrogramcontrols.h"
@@ -38,6 +40,14 @@ public slots:
     void setSampleRate(double rate);
     void setFormat(QString fmt);
     void invalidateEvent() override;
+    void saveSession();
+    void autoDetectRate();
+    void setLsbFirst(bool lsb);
+    void loadSessionFile(const QString &fileName);
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     SpectrogramControls *dock;

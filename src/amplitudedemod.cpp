@@ -24,7 +24,7 @@ AmplitudeDemod::AmplitudeDemod(std::shared_ptr<SampleSource<std::complex<float>>
 
 }
 
-void AmplitudeDemod::work(void *input, void *output, int count, size_t sampleid)
+void AmplitudeDemod::work(void *input, void *output, int count, size_t)
 {
     auto in = static_cast<std::complex<float>*>(input);
     auto out = static_cast<float*>(output);

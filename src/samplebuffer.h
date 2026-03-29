@@ -30,6 +30,8 @@ class SampleBuffer : public SampleSource<Tout>, public Subscriber
 private:
     std::shared_ptr<SampleSource<Tin>> src;
     QMutex mutex;
+    std::unique_ptr<Tout[]> tempBuf;
+    size_t tempBufSize = 0;
 
 public:
     SampleBuffer(std::shared_ptr<SampleSource<Tin>> src);

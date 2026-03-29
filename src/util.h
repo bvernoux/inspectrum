@@ -54,6 +54,9 @@ struct range_t {
     T minimum;
     T maximum;
 
+    range_t() = default;
+    range_t(const range_t<T>&) = default;
+
     range_t<T>& operator=(const range_t<T> &other) {
         minimum = other.minimum;
         maximum = other.maximum;
@@ -99,5 +102,7 @@ struct range_t {
 };
 
 std::string formatSIValue(float value);
+std::string formatSIValueSigned(double value, const char *unit = "");
+bool parseSIValue(const std::string &str, double &result);
 
 template<typename T> const char* getFileNameFilter();

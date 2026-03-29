@@ -21,6 +21,7 @@
 #include "frequencydemod.h"
 #include "phasedemod.h"
 #include "threshold.h"
+#include "thresholdplot.h"
 #include "traceplot.h"
 
 #include "plots.h"
@@ -58,5 +59,5 @@ Plot* Plots::thresholdPlot(std::shared_ptr<AbstractSampleSource> source)
 {
     typedef SampleSource<float> Source;
     std::shared_ptr<Source> concrete= std::dynamic_pointer_cast<Source>(source);
-    return new TracePlot( std::make_shared<Threshold>( concrete ) );
+    return new ThresholdPlot( std::make_shared<Threshold>( concrete ) );
 }

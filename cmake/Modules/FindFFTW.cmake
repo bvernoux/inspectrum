@@ -16,8 +16,17 @@ pkg_check_modules(PC_FFTW QUIET fftw3f)
 find_path (FFTW_INCLUDES fftw3.h
     HINTS ${PC_FFTW_INCLUDEDIR}  ${PC_FFTW_INCLUDE_DIRS})
 
+if (FFTW_USE_STATIC)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES_SAVE ${CMAKE_FIND_LIBRARY_SUFFIXES})
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+endif()
+
 find_library (FFTW_LIBRARIES NAMES fftw3f
     HINTS ${PC_FFTW_LIBDIR} ${PC_FFTW_LIBRARY_DIRS})
+
+if (FFTW_USE_STATIC)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES_SAVE})
+endif()
 
 # handle the QUIETLY and REQUIRED arguments and set FFTW_FOUND to TRUE if
 # all listed variables are TRUE

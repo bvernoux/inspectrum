@@ -230,7 +230,7 @@ InputSource::~InputSource()
 
 void InputSource::cleanup()
 {
-    if (mmapData != nullptr) {
+    if (mmapData != nullptr && inputFile != nullptr) {
         inputFile->unmap(mmapData);
         mmapData = nullptr;
     }
@@ -355,6 +355,7 @@ QJsonObject InputSource::readMetaData(const QString &filename)
 
 void InputSource::openFile(const char *filename)
 {
+    fileName = QString::fromUtf8(filename);
     QFileInfo fileInfo(filename);
     std::string suffix = std::string(fileInfo.suffix().toLower().toUtf8().constData());
     if (_fmt != "") { suffix = _fmt; } // allow fmt override
@@ -469,14 +470,18 @@ std::unique_ptr<std::complex<float>[]> InputSource::getSamples(size_t start, siz
     if (mmapData == nullptr)
         return nullptr;
 
-    if(start < 0 || length < 0)
-        return nullptr;
-
-    if (start + length > sampleCount)
+    if (length == 0 || start >= sampleCount)
         return nullptr;
 
     auto dest = std::make_unique<std::complex<float>[]>(length);
-    sampleAdapter->copyRange(mmapData, start, length, dest.get());
+
+    /* handle partial reads at end of file: copy available
+     * samples, zero-fill the rest */
+    size_t available = std::min(length, sampleCount - start);
+    sampleAdapter->copyRange(mmapData, start, available, dest.get());
+
+    for (size_t i = available; i < length; i++)
+        dest[i] = {0, 0};
 
     return dest;
 }

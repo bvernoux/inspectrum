@@ -35,6 +35,7 @@ class InputSource : public SampleSource<std::complex<float>>
 {
 private:
     QFile *inputFile = nullptr;
+    QString fileName;
     size_t sampleCount = 0;
     double sampleRate = 0.0;
     uchar *mmapData = nullptr;
@@ -56,6 +57,7 @@ public:
     void setSampleRate(double rate);
     void setFormat(std::string fmt);
     double rate();
+    QString getFileName() { return fileName; }
     bool realSignal() {
         return _realSignal;
     };

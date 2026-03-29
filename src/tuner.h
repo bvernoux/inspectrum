@@ -39,6 +39,10 @@ public:
     void paintFront(QPainter &painter, QRect &rect, range_t<size_t> sampleRange);
     void setCentre(int centre);
     void setDeviation(int dev);
+    bool isDragging() const {
+        return minCursor->isDragging() || cfCursor->isDragging() ||
+               maxCursor->isDragging();
+    }
     void setHeight(int height);
 
 public slots:
