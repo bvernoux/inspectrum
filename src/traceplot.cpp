@@ -20,6 +20,9 @@
 #include <QPixmapCache>
 #include <QtConcurrent>
 #include <QPainterPath>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include "samplesource.h"
 #include "traceplot.h"
 
@@ -125,24 +128,101 @@ void TracePlot::handleImage(QString key, QImage image)
     emit repaint();
 }
 
-void TracePlot::plotTrace(QPainter &painter, const QRect &rect, float *samples, size_t count, int step = 1)
+/*
+ * Plot a waveform trace using min/max decimation.
+ *
+ * For each pixel column, find the min and max sample values and draw
+ * a vertical line between them. This preserves fast transitions
+ * (OOK edges, FSK steps) that would be lost with naive point-to-point
+ * drawing when multiple samples map to the same pixel.
+ *
+ * The path connects: last_max -> col_min -> col_max -> next_min -> ...
+ * ensuring continuous lines with no gaps at tile boundaries.
+ */
+void TracePlot::plotTrace(QPainter &painter, const QRect &rect,
+			  float *samples, size_t count, int step)
 {
-    QPainterPath path;
-    range_t<float> xRange{0, rect.width() - 2.f};
-    range_t<float> yRange{0, rect.height() - 2.f};
-    const float xStep = 1.0 / count * rect.width();
-    for (size_t i = 0; i < count; i++) {
-        float sample = samples[i*step];
-        float x = i * xStep;
-        float y = (1 - sample) * (rect.height() / 2);
+	if (count == 0 || rect.width() <= 0 || rect.height() <= 0)
+		return;
 
-        x = xRange.clip(x) + rect.x();
-        y = yRange.clip(y) + rect.y();
+	int w = rect.width();
+	int h = rect.height();
+	float halfH = h * 0.5f;
+	size_t totalSamples = count / step; /* actual sample count */
 
-        if (i == 0)
-            path.moveTo(x, y);
-        else
-            path.lineTo(x, y);
-    }
-    painter.drawPath(path);
+	/* samples per pixel column */
+	float samplesPerPixel = (float)totalSamples / w;
+
+	if (samplesPerPixel <= 1.0f) {
+		/*
+		 * Zoomed in: fewer samples than pixels.
+		 * Draw point-to-point (original behavior, no decimation).
+		 */
+		QPainterPath path;
+		float xScale = (float)w / std::max(totalSamples, (size_t)1);
+		for (size_t i = 0; i < totalSamples; i++) {
+			float sample = samples[i * step];
+			float x = i * xScale;
+			float y = (1.0f - sample) * halfH;
+			x = std::max(0.0f, std::min(x, (float)(w - 1))) + rect.x();
+			y = std::max(0.0f, std::min(y, (float)(h - 1))) + rect.y();
+
+			if (i == 0)
+				path.moveTo(x, y);
+			else
+				path.lineTo(x, y);
+		}
+		painter.drawPath(path);
+		return;
+	}
+
+	/*
+	 * Zoomed out: multiple samples per pixel.
+	 * Min/max decimation: for each pixel column, find the min and max
+	 * sample value and draw a vertical segment. Connect segments with
+	 * lines to the next column's values.
+	 */
+	QPainterPath path;
+	bool first = true;
+	float prevMax = 0;
+
+	for (int col = 0; col < w; col++) {
+		/* sample range for this pixel column */
+		size_t s0 = (size_t)(col * samplesPerPixel);
+		size_t s1 = (size_t)((col + 1) * samplesPerPixel);
+		if (s0 >= totalSamples) s0 = totalSamples - 1;
+		if (s1 > totalSamples) s1 = totalSamples;
+		if (s1 <= s0) s1 = s0 + 1;
+
+		/* find min/max in this column's sample range */
+		float vmin = std::numeric_limits<float>::max();
+		float vmax = -std::numeric_limits<float>::max();
+		for (size_t i = s0; i < s1 && i < totalSamples; i++) {
+			float v = samples[i * step];
+			if (v < vmin) vmin = v;
+			if (v > vmax) vmax = v;
+		}
+
+		/* convert to pixel coordinates */
+		float x = (float)col + rect.x();
+		float yMin = std::max(0.0f, std::min((1.0f - vmax) * halfH, (float)(h - 1))) + rect.y();
+		float yMax = std::max(0.0f, std::min((1.0f - vmin) * halfH, (float)(h - 1))) + rect.y();
+
+		if (first) {
+			path.moveTo(x, yMin);
+			first = false;
+		} else {
+			/* connect to this column from previous max */
+			path.lineTo(x, yMin);
+		}
+
+		/* vertical segment within column (min to max) */
+		if (yMax != yMin)
+			path.lineTo(x, yMax);
+
+		prevMax = yMax;
+		(void)prevMax;
+	}
+
+	painter.drawPath(path);
 }

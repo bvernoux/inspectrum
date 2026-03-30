@@ -105,18 +105,22 @@ void Cursors::leaveEvent()
 
 void Cursors::paintFront(QPainter &painter, QRect &rect, range_t<size_t>)
 {
+    if (gridAlpha <= 0)
+        return; /* fully transparent — draw nothing */
+
     painter.save();
 
     QRect cursorRect(minCursor->pos(), rect.top(), maxCursor->pos() - minCursor->pos(), rect.height());
 
-    // Draw translucent white fill for highlight
+    /* scale fill opacity with grid opacity (base 50 at full opacity) */
+    int fillAlpha = gridAlpha * 50 / 255;
     painter.fillRect(
         cursorRect,
-        QBrush(QColor(255, 255, 255, 50))
+        QBrush(QColor(255, 255, 255, fillAlpha))
     );
 
     // Draw vertical edges for individual segments
-    if (gridAlpha > 0 && segmentCount > 0 && cursorRect.width() > 0) {
+    if (segmentCount > 0 && cursorRect.width() > 0) {
         // Solid lines when many segments visible (dashed is 5-10x slower)
         int pixPerSeg = cursorRect.width() / segmentCount;
         bool useDash = pixPerSeg > 8 && segmentCount < 200;
@@ -148,8 +152,8 @@ void Cursors::paintFront(QPainter &painter, QRect &rect, range_t<size_t>)
         painter.drawLines(lines);
     }
 
-    // Draw vertical edges
-    painter.setPen(QPen(Qt::white, 1, Qt::SolidLine));
+    // Draw cursor edges with opacity matching grid
+    painter.setPen(QPen(QColor(255, 255, 255, gridAlpha), 1, Qt::SolidLine));
     painter.drawLine(minCursor->pos(), rect.top(), minCursor->pos(), rect.bottom());
     painter.drawLine(maxCursor->pos(), rect.top(), maxCursor->pos(), rect.bottom());
 

@@ -65,6 +65,7 @@ signals:
 public slots:
     void cursorsMoved();
     void enableCursors(bool enabled);
+    void lockCursors(bool locked);
     void resetCursorState();
     void setCursorGridOpacity(int opacity);
     void enableScales(bool enabled);
@@ -101,6 +102,14 @@ public slots:
     void setPowerMin(int power);
     void setPowerMax(int power);
     void setAveraging(int count);
+    void setOverlap(int index);
+    void setWindowType(int index);
+    void setKaiserBeta(double beta);
+    void setColormapType(int index);
+    void setAveragingMode(int index);
+    void setAveragingAlpha(double alpha);
+    void setNoiseFloorMethod(int index);
+    void setNoiseFloorPercentile(int pct);
 
 protected:
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -128,6 +137,7 @@ private:
     int powerMin = -100;
     int powerMax = 0;
     bool cursorsEnabled = false;
+    bool cursorsLocked = false;
     bool hadCursors = false;
     range_t<size_t> savedSelectedSamples = {0, 0};
     double sampleRate = 0.0;

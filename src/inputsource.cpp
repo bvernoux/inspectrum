@@ -464,6 +464,7 @@ void InputSource::openFile(const char *filename)
     if (_fmt != "") { suffix = _fmt; } // allow fmt override
     dataOffset = 0;
     _realSignal = false;
+    annotationList.clear(); /* clear stale annotations from previous file */
 
     if (suffix == "wav") {
         /* WAV files are parsed after mmap; adapter set by parseWavHeader */
@@ -613,7 +614,7 @@ bool InputSource::getSamples(size_t start, size_t length, std::complex<float>* d
     sampleAdapter->copyRange(mmapData, start, available, dest);
 
     if (available < length)
-        memset(&dest[available], 0, (length - available) * sizeof(std::complex<float>));
+        std::fill(&dest[available], &dest[length], std::complex<float>(0, 0));
 
     return true;
 }

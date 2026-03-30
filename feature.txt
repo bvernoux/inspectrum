@@ -1,10 +1,10 @@
-inspectrum ng v0.5.0
+inspectrum ng v0.5.1
 ====================
 
-Fork of inspectrum with 40 files changed (~3200 lines added).
+Fork of inspectrum with 52 files changed (~5500 lines added).
 
-Features
---------
+Features (v0.5.0)
+------------------
  1. ThresholdPlot: bin/hex/ascii overlay on threshold waveform, export to clipboard/stdout
  2. Editable symbol rate, period, offset with SI suffix support (k, M, G)
  3. Auto detect symbol rate (ASK/OOK) via Schmitt trigger + run-length analysis
@@ -28,28 +28,93 @@ Features
 21. View position preserved across FFT/zoom/zero-pad changes
 22. Bit order toggle (LSB first)
 
+New features (v0.5.1) — Advanced Spectrogram & Signal Analysis
+--------------------------------------------------------------
+23. FFT overlap control (0%, 25%, 50%, 75%, 87.5%)
+    - Configurable hop size for smoother chirp/swept signal display
+    - 4x more FFT columns at 75% overlap, 8x at 87.5%
+24. Window function selector (6 types)
+    - Hann, Hamming, Blackman-Harris (-92 dB sidelobes),
+      Kaiser (adjustable beta 0-30), Flat-top (amplitude accuracy),
+      Rectangular
+25. Extended zero-padding (1x to 64x)
+    - Smooth frequency interpolation for narrow spectral features
+26. Averaging modes (5 modes)
+    - Off, Linear (box filter), Exponential (adjustable alpha decay),
+      Max hold (peak envelope), Min hold (noise floor mapping)
+    - Max/Min hold use O(n) monotonic deque algorithm
+27. Noise floor estimation & subtraction
+    - Subtract (median), Subtract (percentile), Normalize
+    - Per-frequency-bin estimation, flattens noise for weak signals
+28. Colormap selection (6 colormaps)
+    - Default, Viridis, Inferno, Turbo, Magma, Grayscale
+    - Perceptually uniform options for better dynamic range visibility
+29. Cursor lock (prevent accidental dragging while scrolling)
+30. Grid opacity controls all cursor elements (fill, grid, edges)
+    - Opacity 0 = fully transparent (nothing drawn)
+31. Zoom Y works in crop-to-tuner mode (up to 32x)
+32. Scrollable controls dock (vertical scroll for many controls)
+33. Controls dock sized to fit at launch (user can shrink freely)
+34. Window starts at 50% screen width, 80% height, centered
+
+New files (v0.5.1)
+------------------
+- windowfunctions.h/cpp  — 6 window types with precomputed coefficients
+- colormaps.h/cpp        — 6 colormap LUT generators (256-entry RGBA)
+- noisefloor.h/cpp       — per-bin noise floor estimation & subtraction
+- averaging.h/cpp        — 5 averaging modes with monotonic deque optimization
+
+UI improvements (v0.5.1)
+------------------------
+- Avg mode combo shows/hides relevant sub-controls (slider, alpha spin)
+- Kaiser beta spin visible only when Kaiser window selected
+- Noise percentile spin visible only when percentile mode selected
+- In-app note explaining derived plot independence from FFT settings
+- All new settings persisted in QSettings and .isession files
+
 Display: dynamic slider labels, render time stats (min/avg/max),
 native platform style (windowsvista/Fusion), SI formatted values,
 controls rearranged by workflow.
 
-Performance
------------
+Performance (v0.5.1)
+--------------------
 - FFTW plan cache (FFTW_MEASURE + wisdom persistence + pre-warm at startup)
 - Deferred tuner/zoom updates, ThresholdPlot bit cache, debounced QSettings writes
 - Pre-allocated reusable buffers (FFT tile, sample, linear, liquid-dsp objects)
 - Adaptive tile size (~512KB/tile), 128MB caches, FNV-1a hash keys
 - Precomputed constants, FFT normalization by windowSize, partial read zero-fill
 - Fast IEEE754 log2f/exp2f approximations (bit-trick, sub-pixel dB accuracy)
-- Zero-copy FFT API, zero-alloc sample reads, memset zero-pad
+- Zero-copy FFT API, zero-alloc sample reads, std::fill zero-pad
 - Cache-friendly loop order for colormap (4-7x faster) and averaging
 - Cursor grid: viewport culling, sub-pixel dedup, batched solid lines
 - Correct dB scale (true dBFS, roundtrip-correct dB/linear averaging)
+- TracePlot min/max decimation (preserves fast transitions at all zoom levels)
+- Monotonic deque for O(n) sliding window max/min hold averaging
+- Transpose-process-transpose for cache-friendly max/min hold on column-major data
+- Window functions computed once per config change (zero runtime cost)
+- Colormaps generated once (256-entry LUT, zero runtime cost)
+- Noise floor cached per tile, recomputed only on parameter change
+- Three-level tile cache: fftCache -> enhancedCache -> pixmapCache
+- QPixmapCache properly invalidated on stride-changing settings
+- TileCacheKey includes overlap index for correct cache isolation
 
-Bug fixes
----------
+Bug fixes (v0.5.1)
+------------------
+- Annotation list now cleared on new file load (stale annotations from previous file)
+- Tuner position bounds-checked on session load (prevents out-of-range bins)
+- Session load blocks signals during reset phase (no spurious state mismatches)
+- TracePlot min/max decimation fixes missing vertical segments at all zoom levels
+- Derived plots (amplitude/frequency/phase) now share correct stride with spectrogram
+- QPixmapCache cleared when stride changes (FFT size, zoom, zero-pad, overlap)
+- Zoom Y now works in crop-to-tuner mode
+- Grid opacity 0 now fully hides all cursor elements
+- All -Wall -Wextra -Wpedantic warnings resolved (including pre-existing %zu,
+  memset on complex<float>, unused variables)
+
+Bug fixes (v0.5.0)
+------------------
 Division-by-zero, integer overflow, null pointer guards, uninitialized members,
 bounds checks, iterator fix, type mismatches, tuner constraints, cursor paint.
-All -Wall -Wextra warnings resolved (excluding third-party liquid-dsp).
 Qt5/Qt6 deprecated QMouseEvent constructor fixed.
 .isession files now load correctly from command line.
 All source files ASCII-only (except SI micro sign).
@@ -59,5 +124,6 @@ Build
 MinGW: static linking (libgcc, libstdc++, -mwindows), Qt/runtime DLL bundling.
 FFTW before LIQUID link order for static libs.
 Wisdom file next to exe (fallback to AppLocalDataLocation on read-only installs).
-Portable: builds on Windows (MinGW), Linux, macOS.
-Optional regression test target via CTest.
+Portable: builds on Windows (MinGW/MSVC), Linux, macOS.
+Optional regression test target via CTest (183 tests, 60s timeout).
+Zero warnings with -Wall -Wextra -Wpedantic on GCC/MinGW.

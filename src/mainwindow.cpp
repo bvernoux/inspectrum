@@ -17,8 +17,10 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <QGuiApplication>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QScreen>
 #include <QtWidgets>
 #include <QPixmapCache>
 #include <QJsonDocument>
@@ -34,7 +36,20 @@ MainWindow::MainWindow()
     setWindowTitle(QString("%1 v%2").arg(APP_NAME, APP_VERSION));
     setAcceptDrops(true);
 
-    QPixmapCache::setCacheLimit(40960);
+    /* start at 80% of screen, centered */
+    QScreen *screen = QGuiApplication::primaryScreen();
+    if (screen) {
+        QRect avail = screen->availableGeometry();
+        int w = avail.width() / 2;
+        int h = avail.height() * 4 / 5;
+        int x = avail.x() + (avail.width() - w) / 2;
+        int y = avail.y() + (avail.height() - h) / 2;
+        setGeometry(x, y, w, h);
+    } else {
+        resize(1280, 800);
+    }
+
+    QPixmapCache::setCacheLimit(40 * 1024); /* 40 MB for TracePlot tiles */
 
     dock = new SpectrogramControls(tr("Controls"), this);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
@@ -57,6 +72,7 @@ MainWindow::MainWindow()
     connect(dock->maskOutOfBandCheckBox, &QCheckBox::toggled, plots, &PlotView::setCropToTuner);
     connect(dock, &SpectrogramControls::tunerVisibleChanged, plots, &PlotView::setTunerVisible);
     connect(dock->cursorsCheckBox, &QCheckBox::stateChanged, plots, &PlotView::enableCursors);
+    connect(dock->cursorsLockCheckBox, &QCheckBox::toggled, plots, &PlotView::lockCursors);
     connect(dock->cursorGridSlider, &QSlider::valueChanged, plots, &PlotView::setCursorGridOpacity);
     connect(dock->scalesCheckBox, &QCheckBox::stateChanged, plots, &PlotView::enableScales);
     connect(dock->annosCheckBox, &QCheckBox::stateChanged, plots, &PlotView::enableAnnotations);
@@ -72,6 +88,16 @@ MainWindow::MainWindow()
     connect(dock, &SpectrogramControls::lsbFirstChanged, this, &MainWindow::setLsbFirst);
 
     connect(dock, &SpectrogramControls::avgChanged, plots, &PlotView::setAveraging);
+
+    /* Tier 1 advanced spectrogram controls */
+    connect(dock, &SpectrogramControls::overlapChanged, plots, &PlotView::setOverlap);
+    connect(dock, &SpectrogramControls::windowTypeChanged, plots, &PlotView::setWindowType);
+    connect(dock, &SpectrogramControls::kaiserBetaChanged, plots, &PlotView::setKaiserBeta);
+    connect(dock, &SpectrogramControls::colormapChanged, plots, &PlotView::setColormapType);
+    connect(dock, &SpectrogramControls::avgModeChanged, plots, &PlotView::setAveragingMode);
+    connect(dock, &SpectrogramControls::avgAlphaChanged, plots, &PlotView::setAveragingAlpha);
+    connect(dock, &SpectrogramControls::noiseFloorChanged, plots, &PlotView::setNoiseFloorMethod);
+    connect(dock, &SpectrogramControls::noisePercentileChanged, plots, &PlotView::setNoiseFloorPercentile);
 
     // Connect dock outputs
     connect(plots, &PlotView::timeSelectionChanged, dock, &SpectrogramControls::timeSelectionChanged);
@@ -90,6 +116,8 @@ MainWindow::MainWindow()
     // Set defaults after making connections so everything is in sync
     dock->setDefaults();
 
+    /* start dock wide enough to show all controls; user can shrink freely */
+    resizeDocks({dock}, {310}, Qt::Horizontal);
 }
 
 void MainWindow::openFile(QString fileName)
@@ -207,6 +235,14 @@ void MainWindow::saveSession()
     spectrogram["powerMax"] = dock->powerMaxSlider->value();
     spectrogram["powerMin"] = dock->powerMinSlider->value();
     spectrogram["scales"] = dock->scalesCheckBox->isChecked();
+    spectrogram["overlap"] = dock->overlapCombo->currentIndex();
+    spectrogram["window"] = dock->windowCombo->currentIndex();
+    spectrogram["kaiserBeta"] = dock->kaiserBetaSpin->value();
+    spectrogram["colormap"] = dock->colormapCombo->currentIndex();
+    spectrogram["avgMode"] = dock->avgModeCombo->currentIndex();
+    spectrogram["avgAlpha"] = dock->avgAlphaSpin->value();
+    spectrogram["noiseFloor"] = dock->noiseFloorCombo->currentIndex();
+    spectrogram["noisePercentile"] = dock->noisePercentileSpin->value();
     session["spectrogram"] = spectrogram;
 
     /* tuner */
@@ -220,6 +256,7 @@ void MainWindow::saveSession()
     /* cursors */
     QJsonObject cursors;
     cursors["enabled"] = dock->cursorsCheckBox->isChecked();
+    cursors["locked"] = dock->cursorsLockCheckBox->isChecked();
     cursors["gridOpacity"] = dock->cursorGridSlider->value();
     cursors["segments"] = dock->cursorSymbolsSpinBox->value();
     auto sel = plots->getSelectedSamples();
@@ -272,12 +309,17 @@ void MainWindow::loadSessionFile(const QString &fileName)
     /* clear focus so hasFocus() guards don't block updates */
     dock->setFocus();
 
+    /* block signals during reset to avoid spurious slot calls
+     * that cause momentary state mismatches (bugs #1, #8, #9) */
+    dock->blockSignals(true);
+
     dock->maskOutOfBandCheckBox->setChecked(false);
     dock->lsbFirstCheckBox->setChecked(false);
     dock->zeroPadSlider->setValue(0);
     dock->zoomYSlider->setValue(0);
     dock->cursorGridSlider->setValue(80);
     dock->cursorsCheckBox->setChecked(false);
+    dock->cursorsLockCheckBox->setChecked(false);
     dock->cursorSymbolsSpinBox->setValue(1);
     dock->scalesCheckBox->setChecked(true);
     dock->annosCheckBox->setChecked(true);
@@ -287,7 +329,17 @@ void MainWindow::loadSessionFile(const QString &fileName)
     dock->tunerCentreEdit->setText("");
     dock->tunerBandwidthEdit->setText("");
     dock->avgSlider->setValue(0);
+    dock->overlapCombo->setCurrentIndex(0);
+    dock->windowCombo->setCurrentIndex(0);
+    dock->kaiserBetaSpin->setValue(6.0);
+    dock->colormapCombo->setCurrentIndex(0);
+    dock->avgModeCombo->setCurrentIndex(1); /* Linear */
+    dock->avgAlphaSpin->setValue(0.1);
+    dock->noiseFloorCombo->setCurrentIndex(0);
+    dock->noisePercentileSpin->setValue(20);
     dock->setBookmarksJson(QJsonArray());
+
+    dock->blockSignals(false);
     plots->resetCursorState();
 
     plots->restoreSessionPlots(QJsonArray());
@@ -322,6 +374,14 @@ void MainWindow::loadSessionFile(const QString &fileName)
     dock->powerMaxSlider->setValue(spec["powerMax"].toInt(0));
     dock->powerMinSlider->setValue(spec["powerMin"].toInt(-100));
     dock->scalesCheckBox->setChecked(spec["scales"].toBool(true));
+    dock->overlapCombo->setCurrentIndex(spec["overlap"].toInt(0));
+    dock->windowCombo->setCurrentIndex(spec["window"].toInt(0));
+    dock->kaiserBetaSpin->setValue(spec["kaiserBeta"].toDouble(6.0));
+    dock->colormapCombo->setCurrentIndex(spec["colormap"].toInt(0));
+    dock->avgModeCombo->setCurrentIndex(spec["avgMode"].toInt(1));
+    dock->avgAlphaSpin->setValue(spec["avgAlpha"].toDouble(0.1));
+    dock->noiseFloorCombo->setCurrentIndex(spec["noiseFloor"].toInt(0));
+    dock->noisePercentileSpin->setValue(spec["noisePercentile"].toInt(20));
 
     /* sigmf */
     QJsonObject sigmf = session["sigmf"].toObject();
@@ -338,6 +398,7 @@ void MainWindow::loadSessionFile(const QString &fileName)
     QJsonObject cur = session["cursors"].toObject();
     bool curEnabled = cur["enabled"].toBool(false);
     dock->cursorsCheckBox->setChecked(curEnabled);
+    dock->cursorsLockCheckBox->setChecked(cur["locked"].toBool(false));
     dock->cursorGridSlider->setValue(cur["gridOpacity"].toInt(80));
     if (curEnabled) {
         range_t<size_t> sel = {

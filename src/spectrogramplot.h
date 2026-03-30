@@ -23,11 +23,15 @@
 #include <QString>
 #include <QTimer>
 #include <QWidget>
+#include "averaging.h"
+#include "colormaps.h"
 #include "fft.h"
 #include "inputsource.h"
+#include "noisefloor.h"
 #include "plot.h"
 #include "tuner.h"
 #include "tunertransform.h"
+#include "windowfunctions.h"
 
 #include <memory>
 #include <array>
@@ -40,21 +44,24 @@ class TileCacheKey
 {
 
 public:
-    TileCacheKey(int fftSize, int zoomLevel, size_t sample) {
+    TileCacheKey(int fftSize, int zoomLevel, size_t sample, int overlap = 0) {
         this->fftSize = fftSize;
         this->zoomLevel = zoomLevel;
         this->sample = sample;
+        this->overlap = overlap;
     }
 
     bool operator==(const TileCacheKey &k2) const {
         return (this->fftSize == k2.fftSize) &&
                (this->zoomLevel == k2.zoomLevel) &&
-               (this->sample == k2.sample);
+               (this->sample == k2.sample) &&
+               (this->overlap == k2.overlap);
     }
 
     int fftSize;
     int zoomLevel;
     size_t sample;
+    int overlap;
 };
 
 class SpectrogramPlot : public Plot
@@ -79,6 +86,7 @@ public:
     void setTunerCentre(int centre) { tuner.setCentre(centre); }
     void setTunerDeviation(int dev) { tuner.setDeviation(dev); }
     int getFFTSize() { return fftSize; }
+    int getStride();
     int getNativePlotHeight();
     using Plot::setHeight;
     int getLinesPerTile();
@@ -109,10 +117,20 @@ public slots:
     void setZoomLevel(int zoom);
     void tunerMoved();
     void setAveraging(int count);
+    void setOverlap(int index);
+    void setWindowType(int index);
+    void setKaiserBeta(double beta);
+    void setColormapType(int index);
+    void setAveragingMode(int index);
+    void setAveragingAlpha(double alpha);
+    void setNoiseFloorMethod(int index);
+    void setNoiseFloorPercentile(int pct);
 
 private:
-    const int linesPerGraduation = 50;
-    static const int targetLinesPerTile = 64; // target FFT lines per tile
+    static const int linesPerGraduation = 50;
+    static const int targetLinesPerTile = 64;
+    static const int tileCacheMaxKB = 128 * 1024;     /* ~128 MB per cache */
+    static const int targetTileBytes = 512 * 1024;    /* ~512 KB per tile */
 
     std::shared_ptr<SampleSource<std::complex<float>>> inputSource;
     std::vector<AnnotationLocation> visibleAnnotationLocations;
@@ -160,7 +178,25 @@ private:
 
     /* enhancement mode */
     int avgCount = 1;           /* averaging factor (1 = off) */
+    AveragingMode avgMode = AveragingMode::Linear;
+    float avgAlpha = 0.1f;      /* exponential decay alpha */
     QCache<TileCacheKey, std::vector<float>> enhancedCache;
+
+    /* overlap control */
+    int overlapIndex = 0;       /* index into overlap table: 0%,25%,50%,75%,87.5% */
+    float overlapFraction = 0.0f;
+
+    /* window function */
+    WindowType windowType = WindowType::Hann;
+    float kaiserBeta = 6.0f;
+
+    /* colormap */
+    ColormapType colormapType = ColormapType::Default;
+
+    /* noise floor */
+    NoiseFloorMethod noiseMethod = NoiseFloorMethod::Off;
+    int noisePercentile = 20;
+    std::vector<float> noiseFloorBuf;  /* cached per-bin noise floor */
 
     void updateHeight();
     void updatePowerRange();
@@ -168,7 +204,6 @@ private:
     float* getFFTTile(size_t tile);
     float* getEnhancedTile(size_t tile);
     void getLine(float *dest, size_t sample);
-    int getStride();
     float getTunerPhaseInc();
     std::vector<float> getTunerTaps();
     int linesPerTile();

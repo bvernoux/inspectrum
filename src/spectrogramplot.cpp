@@ -29,7 +29,11 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include "averaging.h"
+#include "colormaps.h"
+#include "noisefloor.h"
 #include "util.h"
+#include "windowfunctions.h"
 
 /*
  * Fast IEEE 754 approximations for log2 and exp2.
@@ -102,9 +106,9 @@ static thread_local TileProfile g_prof;
 
 SpectrogramPlot::SpectrogramPlot(std::shared_ptr<SampleSource<std::complex<float>>> src) : Plot(src), inputSource(src), fftSize(512), windowSize(512), tuner(fftSize, this)
 {
-    pixmapCache.setMaxCost(128 * 1024);   /* ~128 MB of pixmaps */
-    fftCache.setMaxCost(128 * 1024);      /* ~128 MB of FFT data */
-    enhancedCache.setMaxCost(128 * 1024); /* ~128 MB of enhanced data */
+    pixmapCache.setMaxCost(tileCacheMaxKB);
+    fftCache.setMaxCost(tileCacheMaxKB);
+    enhancedCache.setMaxCost(tileCacheMaxKB);
 
     setFFTSize(windowSize);
     zoomLevel = 1;
@@ -114,10 +118,7 @@ SpectrogramPlot::SpectrogramPlot(std::shared_ptr<SampleSource<std::complex<float
     frequencyScaleEnabled = false;
     sigmfAnnotationsEnabled = true;
 
-    for (int i = 0; i < 256; i++) {
-        float p = (float)i / 256;
-        colormap[i] = QColor::fromHsvF(p * 0.83f, 1.0, 1.0 - p).rgba();
-    }
+    generateColormap(colormapType, colormap);
 
     tunerTransform = std::make_shared<TunerTransform>(src);
     connect(&tuner, &Tuner::tunerMoved, this, &SpectrogramPlot::tunerMoved);
@@ -394,8 +395,8 @@ void SpectrogramPlot::paintMid(QPainter &painter, QRect &rect, range_t<size_t> s
     int yCenter = tuner.centre();
 
     if (maskOutOfBand && tunerEnabled()) {
-        /* crop to tuner bandwidth exactly */
-        visibleBins = tuner.deviation() * 2;
+        /* crop to tuner bandwidth, then apply Y zoom */
+        visibleBins = tuner.deviation() * 2 / yZoomLevel;
         if (visibleBins < 2)
             visibleBins = 2;
         if (visibleBins > fftSize)
@@ -435,7 +436,7 @@ void SpectrogramPlot::paintMid(QPainter &painter, QRect &rect, range_t<size_t> s
 
 QPixmap* SpectrogramPlot::getPixmapTile(size_t tile)
 {
-    QPixmap *obj = pixmapCache.object(TileCacheKey(fftSize, zoomLevel, tile));
+    QPixmap *obj = pixmapCache.object(TileCacheKey(fftSize, zoomLevel, tile, overlapIndex));
     if (obj != nullptr)
         return obj;
 #if INSPECTRUM_PROFILE
@@ -485,7 +486,7 @@ QPixmap* SpectrogramPlot::getPixmapTile(size_t tile)
     qint64 pm_convert = pmTimer.nsecsElapsed();
 #endif
     int pmCostKB = (int)((size_t)lpt * fftSize * 4 / 1024);
-    pixmapCache.insert(TileCacheKey(fftSize, zoomLevel, tile), obj,
+    pixmapCache.insert(TileCacheKey(fftSize, zoomLevel, tile, overlapIndex), obj,
                        std::max(pmCostKB, 1));
 #if INSPECTRUM_PROFILE
     qDebug("[PROFILE PIXMAP] fft=%d lpt=%d | alloc=%lld fill=%lld convert=%lld total=%lld us",
@@ -497,7 +498,7 @@ QPixmap* SpectrogramPlot::getPixmapTile(size_t tile)
 
 float* SpectrogramPlot::getFFTTile(size_t tile)
 {
-    std::vector<float>* obj = fftCache.object(TileCacheKey(fftSize, zoomLevel, tile));
+    std::vector<float>* obj = fftCache.object(TileCacheKey(fftSize, zoomLevel, tile, overlapIndex));
     if (obj != nullptr)
         return obj->data();
 
@@ -526,7 +527,7 @@ float* SpectrogramPlot::getFFTTile(size_t tile)
     auto *destStorage = new std::vector<float>(tileWorkBuf.begin(),
                                                tileWorkBuf.begin() + tileDataSize);
     int costKB = (int)(tileDataSize * sizeof(float) / 1024);
-    fftCache.insert(TileCacheKey(fftSize, zoomLevel, tile), destStorage,
+    fftCache.insert(TileCacheKey(fftSize, zoomLevel, tile, overlapIndex), destStorage,
                     std::max(costKB, 1));
 
 #if INSPECTRUM_PROFILE
@@ -565,8 +566,8 @@ void SpectrogramPlot::getLine(float *dest, size_t sample)
 
         /* zero-pad remaining samples */
         if (fftSize > windowSize)
-            memset(&buffer[windowSize], 0,
-                   (fftSize - windowSize) * sizeof(std::complex<float>));
+            std::fill(&buffer[windowSize], &buffer[fftSize],
+                      std::complex<float>(0, 0));
 #if INSPECTRUM_PROFILE
         g_prof.window_ns += pt.nsecsElapsed(); pt.restart();
 #endif
@@ -602,9 +603,11 @@ void SpectrogramPlot::getLine(float *dest, size_t sample)
 
 int SpectrogramPlot::getStride()
 {
+    /* base hop from overlap setting */
+    int hop = std::max((int)(windowSize * (1.0f - overlapFraction)), 1);
     if (zoomLevel <= 0)
-        return windowSize;
-    return std::max(windowSize / zoomLevel, 1);
+        return hop;
+    return std::max(hop / zoomLevel, 1);
 }
 
 float SpectrogramPlot::getTunerPhaseInc()
@@ -639,7 +642,7 @@ int SpectrogramPlot::linesPerTile()
      * fftSize includes zero-pad, so memory is fftSize * lpt * 4 bytes. */
     if (fftSize <= 0)
         return targetLinesPerTile;
-    int lpt = 524288 / (fftSize * (int)sizeof(float));  /* ~512KB */
+    int lpt = targetTileBytes / (fftSize * (int)sizeof(float));
     return std::max(lpt, targetLinesPerTile);
 }
 
@@ -648,7 +651,7 @@ int SpectrogramPlot::getNativePlotHeight()
     int visibleBins;
 
     if (maskOutOfBand && tunerEnabled()) {
-        visibleBins = tuner.deviation() * 2;
+        visibleBins = tuner.deviation() * 2 / yZoomLevel;
         if (visibleBins < 2)
             visibleBins = 2;
         if (visibleBins > fftSize)
@@ -734,9 +737,7 @@ void SpectrogramPlot::setFFTSize(int size)
 
     /* window is windowSize long (applied to input samples) */
     window.reset(new float[windowSize]);
-    for (int i = 0; i < windowSize; i++) {
-        window[i] = 0.5f * (1.0f - cos(Tau * i / std::max(windowSize - 1, 1)));
-    }
+    generateWindow(windowType, windowSize, window.get(), kaiserBeta);
 
     int fullHeight = inputSource->realSignal() ? fftSize / 2 : fftSize;
     tuner.setHeight(fullHeight);
@@ -752,8 +753,8 @@ void SpectrogramPlot::updateHeight()
     int fullHeight = inputSource->realSignal() ? fftSize / 2 : fftSize;
 
     if (maskOutOfBand && tunerEnabled()) {
-        /* crop to tuner bandwidth + 20% margin on each side */
-        int h = tuner.deviation() * 2.4;
+        /* crop to tuner bandwidth + 20% margin, then apply Y zoom */
+        int h = (int)(tuner.deviation() * 2.4) / yZoomLevel;
         if (h < 4) h = 4;
         if (h > fullHeight) h = fullHeight;
         setHeight(h);
@@ -822,11 +823,30 @@ void SpectrogramPlot::zoomRenderNow()
 
 float* SpectrogramPlot::getEnhancedTile(size_t tile)
 {
-    if (avgCount <= 1)
+    bool needAvg = (avgMode != AveragingMode::Off);
+    /*
+     * Effective averaging count:
+     * - Linear: uses the slider count (1 = no-op)
+     * - Max/Min hold: use full tile when slider is at 1x
+     * - Exponential: ignores count (uses alpha)
+     */
+    int effectiveCount = avgCount;
+    if (needAvg && effectiveCount <= 1) {
+        if (avgMode == AveragingMode::MaxHold ||
+            avgMode == AveragingMode::MinHold ||
+            avgMode == AveragingMode::Exponential)
+            effectiveCount = linesPerTile(); /* use full tile */
+        else
+            needAvg = false; /* Linear with count=1 is a no-op */
+    }
+
+    bool needNoise = (noiseMethod != NoiseFloorMethod::Off);
+
+    if (!needAvg && !needNoise)
         return getFFTTile(tile);
 
     std::vector<float> *obj = enhancedCache.object(
-        TileCacheKey(fftSize, zoomLevel, tile));
+        TileCacheKey(fftSize, zoomLevel, tile, overlapIndex));
     if (obj != nullptr)
         return obj->data();
 
@@ -838,53 +858,29 @@ float* SpectrogramPlot::getEnhancedTile(size_t tile)
     size_t tileSize = (size_t)lpt * fftSize;
     auto *enhanced = new std::vector<float>(tileSize);
 
-    if (avgCount > 1) {
-        /* dB -> linear -> average -> dB (causal box filter, width=avgCount) */
-        if (linearBuf.size() < tileSize)
-            linearBuf.resize(tileSize);
-        for (size_t i = 0; i < tileSize; i++)
-            linearBuf[i] = fast_exp2f_approx(raw[i] * dBtoLinScale);
-
-        /* causal box filter: average avgCount lines ending at x.
-         * Window = [x - avgCount + 1 .. x], clamped to [0, lpt).
-         *
-         * Loop order: outer x, inner y -- keeps sequential access
-         * to linearBuf and enhanced (both laid out as [x * fftSize + y]).
-         * Running sums array is fftSize doubles, fits comfortably in L1. */
-        std::vector<double> runSum(fftSize, 0.0);
-        for (int x = 0; x < lpt; x++) {
-            int leaveX = x - avgCount;
-            int count = std::min(x + 1, avgCount);
-            double invCount = 1.0 / count;
-            float *linCol = linearBuf.data() + (size_t)x * fftSize;
-            float *enhCol = enhanced->data() + (size_t)x * fftSize;
-            float *leaveCol = (leaveX >= 0)
-                ? linearBuf.data() + (size_t)leaveX * fftSize
-                : nullptr;
-
-            if (leaveCol) {
-                for (int y = 0; y < fftSize; y++) {
-                    runSum[y] += linCol[y] - leaveCol[y];
-                    double avg = runSum[y] * invCount;
-                    if (avg < 1e-30) avg = 1e-30;
-                    enhCol[y] = fast_log2f_approx((float)avg) * linToDBScale;
-                }
-            } else {
-                for (int y = 0; y < fftSize; y++) {
-                    runSum[y] += linCol[y];
-                    double avg = runSum[y] * invCount;
-                    if (avg < 1e-30) avg = 1e-30;
-                    enhCol[y] = fast_log2f_approx((float)avg) * linToDBScale;
-                }
-            }
-        }
+    /* step 1: averaging */
+    if (needAvg) {
+        applyAveraging(raw, fftSize, lpt, avgMode,
+                       enhanced->data(), effectiveCount, avgAlpha);
     } else {
         memcpy(enhanced->data(), raw, tileSize * sizeof(float));
     }
 
+    /* step 2: noise floor subtraction */
+    if (needNoise) {
+        /* estimate noise floor from this tile's data */
+        if ((int)noiseFloorBuf.size() < fftSize)
+            noiseFloorBuf.resize(fftSize);
+        estimateNoiseFloor(enhanced->data(), fftSize, lpt,
+                           noiseMethod, noiseFloorBuf.data(),
+                           noisePercentile);
+        applyNoiseFloor(enhanced->data(), fftSize, lpt,
+                        noiseMethod, noiseFloorBuf.data());
+    }
+
     int enhCostKB = (int)(tileSize * sizeof(float) / 1024);
-    enhancedCache.insert(TileCacheKey(fftSize, zoomLevel, tile), enhanced,
-                         std::max(enhCostKB, 1));
+    enhancedCache.insert(TileCacheKey(fftSize, zoomLevel, tile, overlapIndex),
+                         enhanced, std::max(enhCostKB, 1));
 #if INSPECTRUM_PROFILE
     g_prof.enhanced_ns = enhTimer.nsecsElapsed();
     qDebug("[PROFILE ENHANCED] fft=%d lpt=%d | enhanced=%lld us",
@@ -902,6 +898,117 @@ void SpectrogramPlot::setAveraging(int count)
     enhancedCache.clear();
     pixmapCache.clear();
     emit repaint();
+}
+
+void SpectrogramPlot::setOverlap(int index)
+{
+    static const float overlapTable[] = {0.0f, 0.25f, 0.50f, 0.75f, 0.875f};
+    if (index < 0) index = 0;
+    if (index > 4) index = 4;
+    if (index == overlapIndex) return;
+
+    overlapIndex = index;
+    overlapFraction = overlapTable[index];
+
+    pixmapCache.clear();
+    enhancedCache.clear();
+    fftCache.clear();
+    emit repaint();
+}
+
+void SpectrogramPlot::setWindowType(int index)
+{
+    if (index < 0 || index >= windowTypeCount()) return;
+    WindowType newType = static_cast<WindowType>(index);
+    if (newType == windowType) return;
+
+    windowType = newType;
+    generateWindow(windowType, windowSize, window.get(), kaiserBeta);
+
+    pixmapCache.clear();
+    enhancedCache.clear();
+    fftCache.clear();
+    emit repaint();
+}
+
+void SpectrogramPlot::setKaiserBeta(double beta)
+{
+    if (beta < 0.0) beta = 0.0;
+    if (beta > 30.0) beta = 30.0;
+    if ((float)beta == kaiserBeta) return;
+
+    kaiserBeta = (float)beta;
+    if (windowType == WindowType::Kaiser) {
+        generateWindow(windowType, windowSize, window.get(), kaiserBeta);
+        pixmapCache.clear();
+        enhancedCache.clear();
+        fftCache.clear();
+        emit repaint();
+    }
+}
+
+void SpectrogramPlot::setColormapType(int index)
+{
+    if (index < 0 || index >= colormapTypeCount()) return;
+    ColormapType newType = static_cast<ColormapType>(index);
+    if (newType == colormapType) return;
+
+    colormapType = newType;
+    generateColormap(colormapType, colormap);
+    pixmapCache.clear();
+    emit repaint();
+}
+
+void SpectrogramPlot::setAveragingMode(int index)
+{
+    if (index < 0 || index >= averagingModeCount()) return;
+    AveragingMode newMode = static_cast<AveragingMode>(index);
+    if (newMode == avgMode) return;
+
+    avgMode = newMode;
+    enhancedCache.clear();
+    pixmapCache.clear();
+    emit repaint();
+}
+
+void SpectrogramPlot::setAveragingAlpha(double alpha)
+{
+    if (alpha < 0.01) alpha = 0.01;
+    if (alpha > 0.99) alpha = 0.99;
+    if ((float)alpha == avgAlpha) return;
+
+    avgAlpha = (float)alpha;
+    if (avgMode == AveragingMode::Exponential) {
+        enhancedCache.clear();
+        pixmapCache.clear();
+        emit repaint();
+    }
+}
+
+void SpectrogramPlot::setNoiseFloorMethod(int index)
+{
+    if (index < 0 || index >= noiseFloorMethodCount()) return;
+    NoiseFloorMethod newMethod = static_cast<NoiseFloorMethod>(index);
+    if (newMethod == noiseMethod) return;
+
+    noiseMethod = newMethod;
+    enhancedCache.clear();
+    pixmapCache.clear();
+    emit repaint();
+}
+
+void SpectrogramPlot::setNoiseFloorPercentile(int pct)
+{
+    if (pct < 1) pct = 1;
+    if (pct > 50) pct = 50;
+    if (pct == noisePercentile) return;
+
+    noisePercentile = pct;
+    if (noiseMethod == NoiseFloorMethod::SubtractPercentile) {
+        enhancedCache.clear();
+        pixmapCache.clear();
+        emit repaint();
+    }
 }
 
 
@@ -997,5 +1104,6 @@ uint qHash(const TileCacheKey &key, uint seed)
     h = (h ^ (uint)key.zoomLevel) * 16777619u;
     h = (h ^ (uint)(key.sample)) * 16777619u;
     h = (h ^ (uint)(key.sample >> 32)) * 16777619u;
+    h = (h ^ (uint)key.overlap) * 16777619u;
     return h;
 }

@@ -382,6 +382,11 @@ void PlotView::enableCursors(bool enabled)
     viewport()->update();
 }
 
+void PlotView::lockCursors(bool locked)
+{
+    cursorsLocked = locked;
+}
+
 void PlotView::setCursorGridOpacity(int opacity)
 {
     cursors.setGridOpacity(opacity);
@@ -449,7 +454,7 @@ bool PlotView::viewportEvent(QEvent *event) {
             plotY += plot->height();
         }
 
-        if (cursorsEnabled)
+        if (cursorsEnabled && !cursorsLocked)
             if (cursors.mouseEvent(event->type(), mouseEvent))
                 return true;
     }
@@ -459,7 +464,7 @@ bool PlotView::viewportEvent(QEvent *event) {
             plot->leaveEvent();
         }
 
-        if (cursorsEnabled)
+        if (cursorsEnabled && !cursorsLocked)
             cursors.leaveEvent();
     }
 
@@ -1360,6 +1365,10 @@ void PlotView::setFFTAndZoom(int size, int zoom)
     horizontalScrollBar()->setSingleStep(10);
     horizontalScrollBar()->setPageStep(100);
 
+    /* clear TracePlot tile cache when stride changes */
+    if (samplesPerColumn() != oldSamplesPerColumn)
+        QPixmapCache::clear();
+
     updateView(false, samplesPerColumn() < oldSamplesPerColumn);
 
     restoreViewPosition(timeSec, freqHz);
@@ -1383,6 +1392,7 @@ void PlotView::setZeroPad(int level)
     saveViewPosition(timeSec, freqHz);
 
     spectrogramPlot->setZeroPad(factor);
+    QPixmapCache::clear(); /* invalidate TracePlot tiles */
     updateView(true);
 
     restoreViewPosition(timeSec, freqHz);
@@ -1432,6 +1442,59 @@ void PlotView::setAveraging(int count)
         spectrogramPlot->setAveraging(factor);
 }
 
+void PlotView::setOverlap(int index)
+{
+    if (spectrogramPlot != nullptr) {
+        double timeSec = 0, freqHz = 0;
+        saveViewPosition(timeSec, freqHz);
+        spectrogramPlot->setOverlap(index);
+        QPixmapCache::clear(); /* invalidate TracePlot tiles */
+        updateView(true);
+        restoreViewPosition(timeSec, freqHz);
+    }
+}
+
+void PlotView::setWindowType(int index)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setWindowType(index);
+}
+
+void PlotView::setKaiserBeta(double beta)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setKaiserBeta(beta);
+}
+
+void PlotView::setColormapType(int index)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setColormapType(index);
+}
+
+void PlotView::setAveragingMode(int index)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setAveragingMode(index);
+}
+
+void PlotView::setAveragingAlpha(double alpha)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setAveragingAlpha(alpha);
+}
+
+void PlotView::setNoiseFloorMethod(int index)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setNoiseFloorMethod(index);
+}
+
+void PlotView::setNoiseFloorPercentile(int pct)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setNoiseFloorPercentile(pct);
+}
 
 void PlotView::jumpToBookmark(double timeSec, double freqHz)
 {
@@ -1593,6 +1656,13 @@ void PlotView::resizeEvent(QResizeEvent *)
 
 size_t PlotView::samplesPerColumn()
 {
+    /* delegate to the spectrogram's stride which accounts for
+     * overlap, window size, zero-pad, and zoom level */
+    if (spectrogramPlot != nullptr) {
+        int stride = spectrogramPlot->getStride();
+        if (stride > 0)
+            return (size_t)stride;
+    }
     if (zoomLevel <= 0)
         return fftSize;
     return fftSize / zoomLevel;
@@ -1731,6 +1801,13 @@ int PlotView::getTunerDeviation()
 void PlotView::setTunerPosition(int centre, int deviation)
 {
     if (spectrogramPlot) {
+        int maxBin = spectrogramPlot->getFFTSize();
+        if (maxBin <= 0) maxBin = 1024;
+        /* clamp to valid bin range */
+        if (deviation < 1) deviation = 1;
+        if (deviation > maxBin / 2) deviation = maxBin / 2;
+        if (centre < deviation) centre = deviation;
+        if (centre > maxBin - deviation) centre = maxBin - deviation;
         spectrogramPlot->setTunerDeviation(deviation);
         spectrogramPlot->setTunerCentre(centre);
         spectrogramPlot->tunerFullUpdate();

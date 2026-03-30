@@ -32,9 +32,11 @@ endif (MINGW)
 # This only works in cmake >3.1
 set(CMAKE_CXX_STANDARD 14)
 
-list(APPEND inspectrum_sources 
+list(APPEND inspectrum_sources
     abstractsamplesource.cpp
     amplitudedemod.cpp
+    averaging.cpp
+    colormaps.cpp
     cursor.cpp
     cursors.cpp
     main.cpp
@@ -42,6 +44,7 @@ list(APPEND inspectrum_sources
     frequencydemod.cpp
     mainwindow.cpp
     inputsource.cpp
+    noisefloor.cpp
     phasedemod.cpp
     plot.cpp
     plots.cpp
@@ -56,6 +59,7 @@ list(APPEND inspectrum_sources
     tuner.cpp
     tunertransform.cpp
     util.cpp
+    windowfunctions.cpp
 )
 
 find_package(Qt6 COMPONENTS Core Concurrent Widgets)
@@ -89,11 +93,15 @@ target_link_libraries(inspectrum
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark.cpp)
     set(bench_sources
         benchmark.cpp
+        averaging.cpp
+        colormaps.cpp
         fft.cpp
         inputsource.cpp
+        noisefloor.cpp
         samplesource.cpp
         abstractsamplesource.cpp
         util.cpp
+        windowfunctions.cpp
     )
     add_executable(inspectrum_bench ${bench_sources})
     target_link_libraries(inspectrum_bench

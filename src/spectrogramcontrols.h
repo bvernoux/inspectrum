@@ -21,6 +21,7 @@
 
 #include <QComboBox>
 #include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QJsonArray>
 #include <QLineEdit>
@@ -56,6 +57,14 @@ signals:
     void tunerVisibleChanged(bool visible);
     void viewPosXEdited(double timeSec);
     void viewPosYEdited(double freqHz);
+    void overlapChanged(int index);
+    void windowTypeChanged(int index);
+    void kaiserBetaChanged(double beta);
+    void colormapChanged(int index);
+    void avgModeChanged(int index);
+    void avgAlphaChanged(double alpha);
+    void noiseFloorChanged(int index);
+    void noisePercentileChanged(int pct);
 
 public slots:
     void timeSelectionChanged(float time, float offset);
@@ -148,7 +157,21 @@ public:
     QCheckBox *scalesCheckBox;
     QCheckBox *annosCheckBox;
     QCheckBox *commentsCheckBox;
+    QCheckBox *cursorsLockCheckBox;
 
     QSlider *avgSlider;
     QLabel *avgLabel;
+
+    /* Tier 1 advanced controls */
+    QComboBox *overlapCombo;
+    QComboBox *windowCombo;
+    QDoubleSpinBox *kaiserBetaSpin;
+    QLabel *kaiserBetaLabel;
+    QComboBox *colormapCombo;
+    QComboBox *avgModeCombo;
+    QDoubleSpinBox *avgAlphaSpin;
+    QLabel *avgAlphaLabel;
+    QComboBox *noiseFloorCombo;
+    QSpinBox *noisePercentileSpin;
+    QLabel *noisePercentileLabel;
 };

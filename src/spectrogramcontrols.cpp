@@ -26,10 +26,15 @@
 #include <QHBoxLayout>
 #include <QIntValidator>
 #include <QFileDialog>
+#include <QScrollArea>
 #include <QSettings>
 #include <QLabel>
 #include <cmath>
+#include "averaging.h"
+#include "colormaps.h"
+#include "noisefloor.h"
 #include "util.h"
+#include "windowfunctions.h"
 
 SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent)
     : QDockWidget::QDockWidget(title, parent)
@@ -127,7 +132,7 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
     });
 
     zeroPadSlider = new QSlider(Qt::Horizontal, widget);
-    zeroPadSlider->setRange(0, 3);
+    zeroPadSlider->setRange(0, 6); /* 1x to 64x */
     zeroPadSlider->setPageStep(1);
     zeroPadSlider->setValue(0);
     zeroPadLabel = new QLabel(tr("Zero-pad:"));
@@ -137,7 +142,7 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
     });
 
     zoomYSlider = new QSlider(Qt::Horizontal, widget);
-    zoomYSlider->setRange(0, 3);
+    zoomYSlider->setRange(0, 5); /* 1x to 32x */
     zoomYSlider->setPageStep(1);
     zoomYSlider->setValue(0);
     zoomYLabel = new QLabel(tr("Zoom Y:"));
@@ -146,6 +151,68 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
         zoomYLabel->setText(QString("Zoom Y (%1x):").arg(1 << v));
     });
 
+    /* ---- Tier 1: Overlap control ---- */
+    overlapCombo = new QComboBox(widget);
+    overlapCombo->addItem("0%");
+    overlapCombo->addItem("25%");
+    overlapCombo->addItem("50%");
+    overlapCombo->addItem("75%");
+    overlapCombo->addItem("87.5%");
+    overlapCombo->setCurrentIndex(0);
+    layout->addRow(new QLabel(tr("Overlap:")), overlapCombo);
+    connect(overlapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &SpectrogramControls::overlapChanged);
+
+    /* ---- Tier 1: Window function selector ---- */
+    windowCombo = new QComboBox(widget);
+    for (int i = 0; i < windowTypeCount(); i++)
+        windowCombo->addItem(windowTypeName(static_cast<WindowType>(i)));
+    windowCombo->setCurrentIndex(0); /* Hann */
+    layout->addRow(new QLabel(tr("Window:")), windowCombo);
+    connect(windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &SpectrogramControls::windowTypeChanged);
+
+    /* Kaiser beta (visible only when Kaiser selected) */
+    kaiserBetaSpin = new QDoubleSpinBox(widget);
+    kaiserBetaSpin->setRange(0.0, 30.0);
+    kaiserBetaSpin->setValue(6.0);
+    kaiserBetaSpin->setSingleStep(0.5);
+    kaiserBetaSpin->setDecimals(1);
+    kaiserBetaLabel = new QLabel(tr("Kaiser beta:"));
+    layout->addRow(kaiserBetaLabel, kaiserBetaSpin);
+    kaiserBetaLabel->setVisible(false);
+    kaiserBetaSpin->setVisible(false);
+    connect(kaiserBetaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &SpectrogramControls::kaiserBetaChanged);
+    connect(windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        bool isKaiser = (static_cast<WindowType>(idx) == WindowType::Kaiser);
+        kaiserBetaLabel->setVisible(isKaiser);
+        kaiserBetaSpin->setVisible(isKaiser);
+    });
+
+    /* ---- Tier 1: Averaging mode ---- */
+    avgModeCombo = new QComboBox(widget);
+    for (int i = 0; i < averagingModeCount(); i++)
+        avgModeCombo->addItem(averagingModeName(static_cast<AveragingMode>(i)));
+    avgModeCombo->setCurrentIndex(1); /* Linear (default, matches old behavior) */
+    layout->addRow(new QLabel(tr("Avg mode:")), avgModeCombo);
+    connect(avgModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &SpectrogramControls::avgModeChanged);
+
+    /* Exponential decay alpha (visible only when Exponential selected) */
+    avgAlphaSpin = new QDoubleSpinBox(widget);
+    avgAlphaSpin->setRange(0.01, 0.99);
+    avgAlphaSpin->setValue(0.1);
+    avgAlphaSpin->setSingleStep(0.05);
+    avgAlphaSpin->setDecimals(2);
+    avgAlphaLabel = new QLabel(tr("Decay alpha:"));
+    layout->addRow(avgAlphaLabel, avgAlphaSpin);
+    avgAlphaLabel->setVisible(false);
+    avgAlphaSpin->setVisible(false);
+    connect(avgAlphaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &SpectrogramControls::avgAlphaChanged);
+    /* Averaging count slider (right under mode + alpha) */
     avgSlider = new QSlider(Qt::Horizontal, widget);
     avgSlider->setRange(0, 5);  /* 2^0=1x to 2^5=32x */
     avgSlider->setPageStep(1);
@@ -156,6 +223,53 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
         avgLabel->setText(QString("Averaging (%1x):").arg(1 << v));
         emit avgChanged(v);
     });
+
+    connect(avgModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        auto mode = static_cast<AveragingMode>(idx);
+        bool isExp = (mode == AveragingMode::Exponential);
+        avgAlphaLabel->setVisible(isExp);
+        avgAlphaSpin->setVisible(isExp);
+        /* hide count slider for modes that don't use it */
+        bool needsCount = (mode == AveragingMode::Linear);
+        avgSlider->setVisible(needsCount);
+        avgLabel->setVisible(needsCount);
+    });
+
+    /* ---- Tier 1: Noise floor ---- */
+    noiseFloorCombo = new QComboBox(widget);
+    for (int i = 0; i < noiseFloorMethodCount(); i++)
+        noiseFloorCombo->addItem(noiseFloorMethodName(static_cast<NoiseFloorMethod>(i)));
+    noiseFloorCombo->setCurrentIndex(0); /* Off */
+    layout->addRow(new QLabel(tr("Noise floor:")), noiseFloorCombo);
+    connect(noiseFloorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &SpectrogramControls::noiseFloorChanged);
+
+    /* Noise percentile (visible only when percentile mode selected) */
+    noisePercentileSpin = new QSpinBox(widget);
+    noisePercentileSpin->setRange(1, 50);
+    noisePercentileSpin->setValue(20);
+    noisePercentileLabel = new QLabel(tr("Percentile:"));
+    layout->addRow(noisePercentileLabel, noisePercentileSpin);
+    noisePercentileLabel->setVisible(false);
+    noisePercentileSpin->setVisible(false);
+    connect(noisePercentileSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &SpectrogramControls::noisePercentileChanged);
+    connect(noiseFloorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        bool isPct = (static_cast<NoiseFloorMethod>(idx) == NoiseFloorMethod::SubtractPercentile);
+        noisePercentileLabel->setVisible(isPct);
+        noisePercentileSpin->setVisible(isPct);
+    });
+
+    /* ---- Tier 1: Colormap selector ---- */
+    colormapCombo = new QComboBox(widget);
+    for (int i = 0; i < colormapTypeCount(); i++)
+        colormapCombo->addItem(colormapTypeName(static_cast<ColormapType>(i)));
+    colormapCombo->setCurrentIndex(0); /* Default */
+    layout->addRow(new QLabel(tr("Colormap:")), colormapCombo);
+    connect(colormapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &SpectrogramControls::colormapChanged);
 
     powerMaxSlider = new QSlider(Qt::Horizontal, widget);
     powerMaxSlider->setRange(-150, 20);
@@ -209,11 +323,30 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
     connect(tunerVisibleCheckBox, &QCheckBox::toggled,
             this, &SpectrogramControls::tunerVisibleChanged);
 
+    /* note: amplitude/frequency/phase plots use a separate pipeline
+     * (tuner filter + demod) and are not affected by spectrogram
+     * settings (FFT size, window, overlap, zero-pad, averaging).
+     * See SIGNAL_PROCESSING.md for details. */
+    auto *plotNote = new QLabel(
+        tr("<i style='color:#888;font-size:9px;'>"
+           "Note: derived plots (amplitude, frequency, phase) use<br>"
+           "tuner-filtered data and are independent of spectrogram<br>"
+           "FFT/window/overlap settings.</i>"));
+    plotNote->setWordWrap(true);
+    layout->addRow(plotNote);
+
     // Time selection settings
     layout->addRow(new QLabel(tr("<b>Time selection</b>")));
 
     cursorsCheckBox = new QCheckBox(widget);
-    layout->addRow(new QLabel(tr("Enable cursors:")), cursorsCheckBox);
+    cursorsLockCheckBox = new QCheckBox(tr("Lock"), widget);
+    cursorsLockCheckBox->setToolTip("Lock cursors to prevent accidental\n"
+                                    "dragging while scrolling.");
+    QHBoxLayout *cursorEnableLayout = new QHBoxLayout();
+    cursorEnableLayout->setContentsMargins(0, 0, 0, 0);
+    cursorEnableLayout->addWidget(cursorsCheckBox);
+    cursorEnableLayout->addWidget(cursorsLockCheckBox);
+    layout->addRow(new QLabel(tr("Enable cursors:")), cursorEnableLayout);
 
     cursorGridSlider = new QSlider(Qt::Horizontal, widget);
     cursorGridSlider->setRange(0, 255);
@@ -274,7 +407,14 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
     layout->addRow(new QLabel(tr("Display annotation\ncomments tooltips:")), commentsCheckBox);
 
     widget->setLayout(layout);
-    setWidget(widget);
+
+    /* wrap in a QScrollArea so controls are scrollable when dock is short */
+    auto *scrollArea = new QScrollArea(this);
+    scrollArea->setWidget(widget);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    setWidget(scrollArea);
 
     connect(fftSizeSlider, &QSlider::valueChanged, this, &SpectrogramControls::fftSizeChanged);
     connect(zoomLevelSlider, &QSlider::valueChanged, this, &SpectrogramControls::zoomLevelChanged);
@@ -339,6 +479,24 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
     /* debounced settings persistence: flush 500ms after last change */
     settingsSaveTimer.setSingleShot(true);
     connect(&settingsSaveTimer, &QTimer::timeout, this, &SpectrogramControls::flushSettings);
+
+    /* persist Tier 1 settings on change */
+    connect(overlapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { markSettingsDirty(); });
+    connect(windowCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { markSettingsDirty(); });
+    connect(kaiserBetaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { markSettingsDirty(); });
+    connect(colormapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { markSettingsDirty(); });
+    connect(avgModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { markSettingsDirty(); });
+    connect(avgAlphaSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { markSettingsDirty(); });
+    connect(noiseFloorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { markSettingsDirty(); });
+    connect(noisePercentileSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, [this](int) { markSettingsDirty(); });
 }
 
 void SpectrogramControls::clearCursorLabels()
@@ -377,6 +535,16 @@ void SpectrogramControls::setDefaults()
     powerMinSlider->setValue(settings.value("PowerMin", -100).toInt());
     zoomLevelSlider->setValue(settings.value("ZoomLevel", 0).toInt());
 
+    /* Tier 1 controls: restore from settings or defaults */
+    overlapCombo->setCurrentIndex(settings.value("Overlap", 0).toInt());
+    windowCombo->setCurrentIndex(settings.value("WindowType", 0).toInt());
+    kaiserBetaSpin->setValue(settings.value("KaiserBeta", 6.0).toDouble());
+    colormapCombo->setCurrentIndex(settings.value("Colormap", 0).toInt());
+    avgModeCombo->setCurrentIndex(settings.value("AvgMode", 1).toInt());
+    avgAlphaSpin->setValue(settings.value("AvgAlpha", 0.1).toDouble());
+    noiseFloorCombo->setCurrentIndex(settings.value("NoiseFloor", 0).toInt());
+    noisePercentileSpin->setValue(settings.value("NoisePercentile", 20).toInt());
+
     emit fftSizeSlider->valueChanged(fftSizeSlider->value());
     emit zoomLevelSlider->valueChanged(zoomLevelSlider->value());
     emit zeroPadSlider->valueChanged(zeroPadSlider->value());
@@ -384,6 +552,16 @@ void SpectrogramControls::setDefaults()
     emit powerMaxSlider->valueChanged(powerMaxSlider->value());
     emit powerMinSlider->valueChanged(powerMinSlider->value());
     emit cursorGridSlider->valueChanged(cursorGridSlider->value());
+
+    /* emit Tier 1 signals to sync the spectrogram */
+    emit overlapChanged(overlapCombo->currentIndex());
+    emit windowTypeChanged(windowCombo->currentIndex());
+    emit kaiserBetaChanged(kaiserBetaSpin->value());
+    emit colormapChanged(colormapCombo->currentIndex());
+    emit avgModeChanged(avgModeCombo->currentIndex());
+    emit avgAlphaChanged(avgAlphaSpin->value());
+    emit noiseFloorChanged(noiseFloorCombo->currentIndex());
+    emit noisePercentileChanged(noisePercentileSpin->value());
 }
 
 void SpectrogramControls::fftOrZoomChanged(void)
@@ -409,6 +587,14 @@ void SpectrogramControls::flushSettings()
     settings.setValue("ZoomLevel", zoomLevelSlider->value());
     settings.setValue("PowerMin", powerMinSlider->value());
     settings.setValue("PowerMax", powerMaxSlider->value());
+    settings.setValue("Overlap", overlapCombo->currentIndex());
+    settings.setValue("WindowType", windowCombo->currentIndex());
+    settings.setValue("KaiserBeta", kaiserBetaSpin->value());
+    settings.setValue("Colormap", colormapCombo->currentIndex());
+    settings.setValue("AvgMode", avgModeCombo->currentIndex());
+    settings.setValue("AvgAlpha", avgAlphaSpin->value());
+    settings.setValue("NoiseFloor", noiseFloorCombo->currentIndex());
+    settings.setValue("NoisePercentile", noisePercentileSpin->value());
 }
 
 void SpectrogramControls::fftSizeChanged(int value)
