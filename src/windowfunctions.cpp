@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Window function library for inspectrum ng.
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -8,13 +10,8 @@
  */
 
 #include "windowfunctions.h"
+#include "util.h"
 #include <cmath>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
-static const double Tau = M_PI * 2.0;
 
 /*
  * Modified Bessel function of the first kind, order 0.
@@ -96,7 +93,8 @@ void generateWindow(WindowType type, int size, float *dest, float beta)
 				   + 1.29 * cos(2.0 * x)
 				   - 0.388 * cos(3.0 * x)
 				   + 0.0322 * cos(4.0 * x);
-			dest[i] = (float)(w / 0.9644); /* normalize peak to ~1.0 */
+			/* 0.9644 = peak of unnormalized flat-top window */
+			dest[i] = (float)(w / 0.9644);
 		}
 		break;
 

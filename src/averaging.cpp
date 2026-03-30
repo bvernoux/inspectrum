@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Extended averaging modes for inspectrum ng.
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -8,48 +10,12 @@
  */
 
 #include "averaging.h"
+#include "util.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
-#include <cstring>
 #include <deque>
 #include <limits>
 #include <vector>
-
-/*
- * IEEE 754 fast approximations (same as spectrogramplot.cpp).
- * Duplicated here to keep the module self-contained.
- */
-static inline float fast_log2f_approx(float x)
-{
-	int32_t i;
-	memcpy(&i, &x, sizeof(i));
-	return (float)(i - 0x3F800000) * 1.1920928955078125e-7f;
-}
-
-static inline float fast_exp2f_approx(float x)
-{
-	int32_t i = (int32_t)(x * 8388608.0f) + 0x3F800000;
-	float r;
-	memcpy(&r, &i, sizeof(r));
-	return r;
-}
-
-/* 10 / log2(10) for dB <-> log2 conversion */
-static constexpr float dBtoLinScale = 0.33219280948873626f; /* log2(10)/10 */
-static constexpr float linToDBScale = 3.0102999566398120f;  /* 10/log2(10) */
-
-static inline float dBtoLinear(float dB)
-{
-	return fast_exp2f_approx(dB * dBtoLinScale);
-}
-
-static inline float linearTodB(float lin)
-{
-	if (lin < 1e-30f)
-		lin = 1e-30f;
-	return fast_log2f_approx(lin) * linToDBScale;
-}
 
 /*
  * Linear (mean) averaging with causal box filter.
@@ -162,7 +128,7 @@ static void transposeFromdB(const float *rowMajor, int n_freq, int n_time,
 
 /*
  * Max hold: sliding window maximum using monotonic deque.
- * O(n_freq * n_time) amortized — each element is pushed/popped at most once.
+ * O(n_freq * n_time) amortized - each element is pushed/popped at most once.
  * Transposes to row-major for sequential access, then transposes back.
  */
 static void avgMaxHold(const float *data, int n_freq, int n_time,

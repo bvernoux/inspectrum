@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Noise floor estimation and subtraction for inspectrum ng.
  *  Per-frequency-bin noise floor estimation with multiple methods.
  *

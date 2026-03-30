@@ -2,6 +2,8 @@
 
 inspectrum ng (next generation) is a fork of [inspectrum](https://github.com/miek/inspectrum) for analysing captured signals from software-defined radio receivers.
 
+![inspectrum screenshot](/screenshot.jpg)
+
 ## Features
 
  * Large (100GB+) file support with memory-mapped I/O

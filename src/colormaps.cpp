@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Colormap LUT library for inspectrum ng.
  *
  *  Viridis, Inferno, Magma: adapted from matplotlib (BSD license).
@@ -13,10 +15,6 @@
 #include "colormaps.h"
 #include <cmath>
 #include <algorithm>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 static inline uint32_t packRGBA(int r, int g, int b)
 {
@@ -45,8 +43,8 @@ struct ColorCP {
 
 static void interpolateColormap(const ColorCP *cp, int ncp, uint32_t *dest)
 {
-	for (int i = 0; i < 256; i++) {
-		float t = i / 255.0f;
+	for (int i = 0; i < COLORMAP_SIZE; i++) {
+		float t = i / (float)(COLORMAP_SIZE - 1);
 
 		/* find bracketing control points */
 		int lo = 0;
@@ -69,12 +67,13 @@ static void interpolateColormap(const ColorCP *cp, int ncp, uint32_t *dest)
 
 /* ---- Default: existing inspectrum HSV sweep ---- */
 
+static const float DEFAULT_HUE_RANGE = 0.83f; /* blue(0) to red(0.83) */
+
 static void generateDefault(uint32_t *dest)
 {
-	for (int i = 0; i < 256; i++) {
-		float p = (float)i / 256.0f;
-		/* HSV: hue = p*0.83 (blue->red), sat=1, val=1-p */
-		float h = p * 0.83f;
+	for (int i = 0; i < COLORMAP_SIZE; i++) {
+		float p = (float)i / COLORMAP_SIZE;
+		float h = p * DEFAULT_HUE_RANGE;
 		float s = 1.0f;
 		float v = 1.0f - p;
 
@@ -170,8 +169,8 @@ static const ColorCP magma_cp[] = {
  */
 static void generateTurbo(uint32_t *dest)
 {
-	for (int i = 0; i < 256; i++) {
-		float x = i / 255.0f;
+	for (int i = 0; i < COLORMAP_SIZE; i++) {
+		float x = i / (float)(COLORMAP_SIZE - 1);
 
 		float r = 0.13572138f
 			+ x * (4.61539260f
@@ -200,7 +199,7 @@ static void generateTurbo(uint32_t *dest)
 
 static void generateGrayscale(uint32_t *dest)
 {
-	for (int i = 0; i < 256; i++) {
+	for (int i = 0; i < COLORMAP_SIZE; i++) {
 		/* index 0 = darkest (highest power), 255 = brightest (lowest power)
 		 * The spectrogram maps: 0 = lowest power, 255 = highest power.
 		 * For grayscale: bright = strong signal, dark = weak/noise. */

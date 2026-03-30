@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2016, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -184,7 +185,6 @@ void TracePlot::plotTrace(QPainter &painter, const QRect &rect,
 	 */
 	QPainterPath path;
 	bool first = true;
-	float prevMax = 0;
 
 	for (int col = 0; col < w; col++) {
 		/* sample range for this pixel column */
@@ -220,8 +220,6 @@ void TracePlot::plotTrace(QPainter &painter, const QRect &rect,
 		if (yMax != yMin)
 			path.lineTo(x, yMax);
 
-		prevMax = yMax;
-		(void)prevMax;
 	}
 
 	painter.drawPath(path);

@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2016, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -106,7 +107,7 @@ void Cursors::leaveEvent()
 void Cursors::paintFront(QPainter &painter, QRect &rect, range_t<size_t>)
 {
     if (gridAlpha <= 0)
-        return; /* fully transparent — draw nothing */
+        return; /* fully transparent - draw nothing */
 
     painter.save();
 

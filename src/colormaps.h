@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Colormap LUT library for inspectrum ng.
  *  256-entry RGBA lookup tables for spectrogram rendering.
  *
@@ -11,6 +13,8 @@
 #pragma once
 
 #include <cstdint>
+
+static constexpr int COLORMAP_SIZE = 256;
 
 enum class ColormapType {
 	Default = 0,

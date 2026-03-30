@@ -49,6 +49,7 @@ list(APPEND inspectrum_sources
     plot.cpp
     plots.cpp
     plotview.cpp
+    reassigned.cpp
     samplebuffer.cpp
     samplesource.cpp
     spectrogramcontrols.cpp
@@ -98,6 +99,7 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark.cpp)
         fft.cpp
         inputsource.cpp
         noisefloor.cpp
+        reassigned.cpp
         samplesource.cpp
         abstractsamplesource.cpp
         util.cpp

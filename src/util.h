@@ -1,6 +1,7 @@
 /*
  *  Copyright (C) 2016, Mike Walters <mike@flomp.net>
  *  Copyright (C) 2016, Jared Boone, ShareBrained Technology, Inc.
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -24,6 +25,7 @@
 #include <map>
 #include <math.h>
 #include <sstream>
+#include "fastmath.h"
 
 static const double Tau = M_PI * 2.0;
 

@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2015, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -34,39 +35,6 @@
 #include "noisefloor.h"
 #include "util.h"
 #include "windowfunctions.h"
-
-/*
- * Fast IEEE 754 approximations for log2 and exp2.
- *
- * IEEE 754 float bit layout: [sign:1][exponent:8][mantissa:23]
- * For a positive normal float x = 2^(e-127) * (1 + m/2^23), so:
- *   bits(x) = (e << 23) | m  ~=  2^23 * (log2(x) + 127)
- *
- * Rearranging: log2(x) ~= (bits(x) - 127*2^23) / 2^23
- *
- * Max absolute error: ~0.086 in log2 units = ~0.29 dB.
- * A 256-color spectrogram over 100 dB has ~0.39 dB per color step,
- * so the error is sub-pixel and visually identical to standard log2f.
- *
- * Edge cases (all safe for spectrogram use):
- *   power = 0    -> ~-422 dB (standard: -inf) -> clamped to darkest color
- *   power = +inf -> ~+425 dB (standard: +inf) -> clamped to brightest color
- *   denormals    -> very negative dB, below display range -> darkest color
- */
-static inline float fast_log2f_approx(float x)
-{
-    int32_t i;
-    memcpy(&i, &x, sizeof(i));
-    return (float)(i - 0x3F800000) * 1.1920928955078125e-7f; /* 1/(1<<23) */
-}
-
-static inline float fast_exp2f_approx(float x)
-{
-    int32_t i = (int32_t)(x * 8388608.0f) + 0x3F800000; /* x*(1<<23) + 127*(1<<23) */
-    float r;
-    memcpy(&r, &i, sizeof(r));
-    return r;
-}
 
 /* ---- Profiling instrumentation ---- */
 /* set to 1 to enable per-tile profiling output via qDebug */
@@ -140,9 +108,7 @@ void SpectrogramPlot::invalidateEvent()
     windowSize = 0;  /* force setFFTSize to run */
     setFFTSize(savedWin);
 
-    pixmapCache.clear();
-    enhancedCache.clear();
-    fftCache.clear();
+    clearAllCaches();
     emit repaint();
 }
 
@@ -475,7 +441,7 @@ QPixmap* SpectrogramPlot::getPixmapTile(size_t tile)
             float normPower = clamp(
                 (col[y] - powerMax) * pRange,
                 0.0f, 1.0f);
-            scanLinePtrs[y][x] = colormap[(uint8_t)(normPower * 255.0f)];
+            scanLinePtrs[y][x] = colormap[(uint8_t)(normPower * (COLORMAP_SIZE - 1))];
         }
     }
 #if INSPECTRUM_PROFILE
@@ -515,12 +481,37 @@ float* SpectrogramPlot::getFFTTile(size_t tile)
     /* compute into reusable scratch buffer (avoids zeroing a fresh allocation) */
     if (tileWorkBuf.size() < tileDataSize)
         tileWorkBuf.resize(tileDataSize);
-    float *ptr = tileWorkBuf.data();
-    size_t sample = tile;
-    for (int i = 0; i < lpt; i++) {
-        getLine(ptr, sample);
-        sample += getStride();
-        ptr += fftSize;
+
+    if (tfrMode != TFRMode::Standard) {
+        /* reassigned or synchrosqueezed: read raw samples for tile,
+         * then delegate to the reassignment engine */
+        size_t samplesNeeded = (size_t)(lpt - 1) * getStride() + windowSize;
+        ssize_t readStart = (ssize_t)tile - windowSize / 2;
+        if (readStart < 0) readStart = 0;
+        size_t readLen = samplesNeeded + windowSize;
+
+        /* read interleaved IQ float pairs */
+        auto rawBuf = std::make_unique<std::complex<float>[]>(readLen);
+        if (inputSource)
+            inputSource->getSamples(readStart, readLen, rawBuf.get());
+
+        computeReassignedTile(tfrMode,
+                              reinterpret_cast<const float*>(rawBuf.get()),
+                              readLen * 2, /* float count (I+Q pairs) */
+                              windowSize, fftSize,
+                              window.get(),
+                              getStride(), lpt,
+                              reassignThreshold,
+                              tileWorkBuf.data());
+    } else {
+        /* standard STFT */
+        float *ptr = tileWorkBuf.data();
+        size_t sample = tile;
+        for (int i = 0; i < lpt; i++) {
+            getLine(ptr, sample);
+            sample += getStride();
+            ptr += fftSize;
+        }
     }
 
     /* copy result into a cache-owned allocation */
@@ -586,13 +577,13 @@ void SpectrogramPlot::getLine(float *dest, size_t sample)
         for (int i = 0; i < half; i++) {
             auto s = result[half + i] * invN;
             float power = s.real() * s.real() + s.imag() * s.imag();
-            dest[i] = fast_log2f_approx(power) * logMultiplier;
+            dest[i] = fast_log2f_approx(power) * dBFS_SCALE;
         }
         /* second half of output <- lower half of FFT (positive frequencies) */
         for (int i = 0; i < half; i++) {
             auto s = result[i] * invN;
             float power = s.real() * s.real() + s.imag() * s.imag();
-            dest[half + i] = fast_log2f_approx(power) * logMultiplier;
+            dest[half + i] = fast_log2f_approx(power) * dBFS_SCALE;
         }
 #if INSPECTRUM_PROFILE
         g_prof.magnitude_ns += pt.nsecsElapsed();
@@ -769,6 +760,19 @@ void SpectrogramPlot::updatePowerRange()
     powerRange = (delta > 0) ? -1.0f / delta : -1.0f;
 }
 
+void SpectrogramPlot::clearAllCaches()
+{
+    fftCache.clear();
+    enhancedCache.clear();
+    pixmapCache.clear();
+}
+
+void SpectrogramPlot::clearEnhancedAndPixmap()
+{
+    enhancedCache.clear();
+    pixmapCache.clear();
+}
+
 void SpectrogramPlot::setPowerMax(int power)
 {
     powerMax = power;
@@ -794,9 +798,7 @@ void SpectrogramPlot::setZeroPad(int factor)
     int savedWin = windowSize;
     windowSize = 0;  /* force setFFTSize to run */
     setFFTSize(savedWin);
-    pixmapCache.clear();
-    enhancedCache.clear();
-    fftCache.clear();
+    clearAllCaches();
     emit repaint();
 }
 
@@ -890,14 +892,19 @@ float* SpectrogramPlot::getEnhancedTile(size_t tile)
 }
 
 
+/*
+ * All setters always update the member variable, but only
+ * clear caches and repaint when the value actually changes.
+ * This ensures force-sync from session load always works
+ * (Qt widgets don't emit valueChanged if new == old).
+ */
+
 void SpectrogramPlot::setAveraging(int count)
 {
     if (count < 1) count = 1;
-    if (count == avgCount) return;
+    bool changed = (count != avgCount);
     avgCount = count;
-    enhancedCache.clear();
-    pixmapCache.clear();
-    emit repaint();
+    if (changed) { clearEnhancedAndPixmap(); emit repaint(); }
 }
 
 void SpectrogramPlot::setOverlap(int index)
@@ -905,44 +912,31 @@ void SpectrogramPlot::setOverlap(int index)
     static const float overlapTable[] = {0.0f, 0.25f, 0.50f, 0.75f, 0.875f};
     if (index < 0) index = 0;
     if (index > 4) index = 4;
-    if (index == overlapIndex) return;
-
+    bool changed = (index != overlapIndex);
     overlapIndex = index;
     overlapFraction = overlapTable[index];
-
-    pixmapCache.clear();
-    enhancedCache.clear();
-    fftCache.clear();
-    emit repaint();
+    if (changed) { clearAllCaches(); emit repaint(); }
 }
 
 void SpectrogramPlot::setWindowType(int index)
 {
     if (index < 0 || index >= windowTypeCount()) return;
     WindowType newType = static_cast<WindowType>(index);
-    if (newType == windowType) return;
-
+    bool changed = (newType != windowType);
     windowType = newType;
     generateWindow(windowType, windowSize, window.get(), kaiserBeta);
-
-    pixmapCache.clear();
-    enhancedCache.clear();
-    fftCache.clear();
-    emit repaint();
+    if (changed) { clearAllCaches(); emit repaint(); }
 }
 
 void SpectrogramPlot::setKaiserBeta(double beta)
 {
     if (beta < 0.0) beta = 0.0;
     if (beta > 30.0) beta = 30.0;
-    if ((float)beta == kaiserBeta) return;
-
+    bool changed = ((float)beta != kaiserBeta);
     kaiserBeta = (float)beta;
-    if (windowType == WindowType::Kaiser) {
+    if (changed && windowType == WindowType::Kaiser) {
         generateWindow(windowType, windowSize, window.get(), kaiserBeta);
-        pixmapCache.clear();
-        enhancedCache.clear();
-        fftCache.clear();
+        clearAllCaches();
         emit repaint();
     }
 }
@@ -951,36 +945,29 @@ void SpectrogramPlot::setColormapType(int index)
 {
     if (index < 0 || index >= colormapTypeCount()) return;
     ColormapType newType = static_cast<ColormapType>(index);
-    if (newType == colormapType) return;
-
+    bool changed = (newType != colormapType);
     colormapType = newType;
     generateColormap(colormapType, colormap);
-    pixmapCache.clear();
-    emit repaint();
+    if (changed) { pixmapCache.clear(); emit repaint(); }
 }
 
 void SpectrogramPlot::setAveragingMode(int index)
 {
     if (index < 0 || index >= averagingModeCount()) return;
     AveragingMode newMode = static_cast<AveragingMode>(index);
-    if (newMode == avgMode) return;
-
+    bool changed = (newMode != avgMode);
     avgMode = newMode;
-    enhancedCache.clear();
-    pixmapCache.clear();
-    emit repaint();
+    if (changed) { clearEnhancedAndPixmap(); emit repaint(); }
 }
 
 void SpectrogramPlot::setAveragingAlpha(double alpha)
 {
     if (alpha < 0.01) alpha = 0.01;
     if (alpha > 0.99) alpha = 0.99;
-    if ((float)alpha == avgAlpha) return;
-
+    bool changed = ((float)alpha != avgAlpha);
     avgAlpha = (float)alpha;
-    if (avgMode == AveragingMode::Exponential) {
-        enhancedCache.clear();
-        pixmapCache.clear();
+    if (changed && avgMode == AveragingMode::Exponential) {
+        clearEnhancedAndPixmap();
         emit repaint();
     }
 }
@@ -989,28 +976,47 @@ void SpectrogramPlot::setNoiseFloorMethod(int index)
 {
     if (index < 0 || index >= noiseFloorMethodCount()) return;
     NoiseFloorMethod newMethod = static_cast<NoiseFloorMethod>(index);
-    if (newMethod == noiseMethod) return;
-
+    bool changed = (newMethod != noiseMethod);
     noiseMethod = newMethod;
-    enhancedCache.clear();
-    pixmapCache.clear();
-    emit repaint();
+    if (changed) { clearEnhancedAndPixmap(); emit repaint(); }
 }
 
 void SpectrogramPlot::setNoiseFloorPercentile(int pct)
 {
     if (pct < 1) pct = 1;
     if (pct > 50) pct = 50;
-    if (pct == noisePercentile) return;
-
+    bool changed = (pct != noisePercentile);
     noisePercentile = pct;
-    if (noiseMethod == NoiseFloorMethod::SubtractPercentile) {
-        enhancedCache.clear();
-        pixmapCache.clear();
+    if (changed && noiseMethod == NoiseFloorMethod::SubtractPercentile) {
+        clearEnhancedAndPixmap();
         emit repaint();
     }
 }
 
+void SpectrogramPlot::setTFRMode(int index)
+{
+    if (index < 0 || index >= tfrModeCount()) return;
+    TFRMode newMode = static_cast<TFRMode>(index);
+    bool changed = (newMode != tfrMode);
+    tfrMode = newMode;
+    if (changed) {
+        clearAllCaches();
+        QPixmapCache::clear();
+        emit repaint();
+    }
+}
+
+void SpectrogramPlot::setReassignThreshold(double dB)
+{
+    if (dB < 1.0) dB = 1.0;
+    if (dB > 120.0) dB = 120.0;
+    bool changed = ((float)dB != reassignThreshold);
+    reassignThreshold = (float)dB;
+    if (changed && tfrMode != TFRMode::Standard) {
+        clearAllCaches();
+        emit repaint();
+    }
+}
 
 void SpectrogramPlot::setZoomY(int level)
 {
@@ -1094,16 +1100,4 @@ void SpectrogramPlot::tunerFullUpdate()
     updateHeight();
     QPixmapCache::clear();
     emit repaint();
-}
-
-uint qHash(const TileCacheKey &key, uint seed)
-{
-    /* FNV-1a style mixing for better distribution */
-    uint h = seed ^ 2166136261u;
-    h = (h ^ (uint)key.fftSize) * 16777619u;
-    h = (h ^ (uint)key.zoomLevel) * 16777619u;
-    h = (h ^ (uint)(key.sample)) * 16777619u;
-    h = (h ^ (uint)(key.sample >> 32)) * 16777619u;
-    h = (h ^ (uint)key.overlap) * 16777619u;
-    return h;
 }

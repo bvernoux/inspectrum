@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2015, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -29,6 +30,8 @@
 #include "inputsource.h"
 #include "noisefloor.h"
 #include "plot.h"
+#include "reassigned.h"
+#include "tilecache.h"
 #include "tuner.h"
 #include "tunertransform.h"
 #include "windowfunctions.h"
@@ -39,30 +42,6 @@
 #include <vector>
 
 class AnnotationLocation;
-
-class TileCacheKey
-{
-
-public:
-    TileCacheKey(int fftSize, int zoomLevel, size_t sample, int overlap = 0) {
-        this->fftSize = fftSize;
-        this->zoomLevel = zoomLevel;
-        this->sample = sample;
-        this->overlap = overlap;
-    }
-
-    bool operator==(const TileCacheKey &k2) const {
-        return (this->fftSize == k2.fftSize) &&
-               (this->zoomLevel == k2.zoomLevel) &&
-               (this->sample == k2.sample) &&
-               (this->overlap == k2.overlap);
-    }
-
-    int fftSize;
-    int zoomLevel;
-    size_t sample;
-    int overlap;
-};
 
 class SpectrogramPlot : public Plot
 {
@@ -125,6 +104,8 @@ public slots:
     void setAveragingAlpha(double alpha);
     void setNoiseFloorMethod(int index);
     void setNoiseFloorPercentile(int pct);
+    void setTFRMode(int index);
+    void setReassignThreshold(double dB);
 
 private:
     static const int linesPerGraduation = 50;
@@ -152,9 +133,7 @@ private:
 
     /* precomputed constants (updated when settings change) */
     float invN = 1.0f;                         /* 1.0 / windowSize */
-    static constexpr float logMultiplier = 3.0102999566398120f; /* 10 / log2(10) = dBFS */
-    static constexpr float dBtoLinScale = 0.33219280948873626f; /* log2(10) / 10 = 1/logMultiplier */
-    static constexpr float linToDBScale = 3.0102999566398120f;  /* 10 / log2(10) = dBFS */
+
     float powerRange = -1.0f;                  /* -1.0 / abs(powerMin - powerMax) */
 
     /* reusable buffers (avoid per-tile allocation) */
@@ -198,6 +177,12 @@ private:
     int noisePercentile = 20;
     std::vector<float> noiseFloorBuf;  /* cached per-bin noise floor */
 
+    /* TFR mode (reassigned / synchrosqueezed) */
+    TFRMode tfrMode = TFRMode::Standard;
+    float reassignThreshold = 40.0f;   /* dB below peak */
+
+    void clearAllCaches();
+    void clearEnhancedAndPixmap();
     void updateHeight();
     void updatePowerRange();
     QPixmap* getPixmapTile(size_t tile);

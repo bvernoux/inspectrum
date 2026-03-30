@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2015, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -98,6 +99,8 @@ MainWindow::MainWindow()
     connect(dock, &SpectrogramControls::avgAlphaChanged, plots, &PlotView::setAveragingAlpha);
     connect(dock, &SpectrogramControls::noiseFloorChanged, plots, &PlotView::setNoiseFloorMethod);
     connect(dock, &SpectrogramControls::noisePercentileChanged, plots, &PlotView::setNoiseFloorPercentile);
+    connect(dock, &SpectrogramControls::tfrModeChanged, plots, &PlotView::setTFRMode);
+    connect(dock, &SpectrogramControls::reassignThresholdChanged, plots, &PlotView::setReassignThreshold);
 
     // Connect dock outputs
     connect(plots, &PlotView::timeSelectionChanged, dock, &SpectrogramControls::timeSelectionChanged);
@@ -243,6 +246,8 @@ void MainWindow::saveSession()
     spectrogram["avgAlpha"] = dock->avgAlphaSpin->value();
     spectrogram["noiseFloor"] = dock->noiseFloorCombo->currentIndex();
     spectrogram["noisePercentile"] = dock->noisePercentileSpin->value();
+    spectrogram["tfrMode"] = dock->tfrModeCombo->currentIndex();
+    spectrogram["reassignThreshold"] = dock->reassignThresholdSpin->value();
     session["spectrogram"] = spectrogram;
 
     /* tuner */
@@ -337,6 +342,8 @@ void MainWindow::loadSessionFile(const QString &fileName)
     dock->avgAlphaSpin->setValue(0.1);
     dock->noiseFloorCombo->setCurrentIndex(0);
     dock->noisePercentileSpin->setValue(20);
+    dock->tfrModeCombo->setCurrentIndex(0);
+    dock->reassignThresholdSpin->setValue(40.0);
     dock->setBookmarksJson(QJsonArray());
 
     dock->blockSignals(false);
@@ -382,6 +389,27 @@ void MainWindow::loadSessionFile(const QString &fileName)
     dock->avgAlphaSpin->setValue(spec["avgAlpha"].toDouble(0.1));
     dock->noiseFloorCombo->setCurrentIndex(spec["noiseFloor"].toInt(0));
     dock->noisePercentileSpin->setValue(spec["noisePercentile"].toInt(20));
+    dock->tfrModeCombo->setCurrentIndex(spec["tfrMode"].toInt(0));
+    dock->reassignThresholdSpin->setValue(spec["reassignThreshold"].toDouble(40.0));
+
+    /*
+     * Force-sync all Tier 1 / TFR parameters to SpectrogramPlot.
+     * Qt widgets don't emit valueChanged if the new value equals
+     * the reset value set during the blockSignals phase above.
+     * Direct calls bypass the signal guard and ensure the plot
+     * always matches the UI after session load.
+     */
+    plots->setOverlap(dock->overlapCombo->currentIndex());
+    plots->setWindowType(dock->windowCombo->currentIndex());
+    plots->setKaiserBeta(dock->kaiserBetaSpin->value());
+    plots->setColormapType(dock->colormapCombo->currentIndex());
+    plots->setAveragingMode(dock->avgModeCombo->currentIndex());
+    plots->setAveragingAlpha(dock->avgAlphaSpin->value());
+    plots->setAveraging(dock->avgSlider->value());
+    plots->setNoiseFloorMethod(dock->noiseFloorCombo->currentIndex());
+    plots->setNoiseFloorPercentile(dock->noisePercentileSpin->value());
+    plots->setTFRMode(dock->tfrModeCombo->currentIndex());
+    plots->setReassignThreshold(dock->reassignThresholdSpin->value());
 
     /* sigmf */
     QJsonObject sigmf = session["sigmf"].toObject();

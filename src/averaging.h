@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Extended averaging modes for inspectrum ng.
  *  Linear (mean), exponential, max hold, min hold.
  *

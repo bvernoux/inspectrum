@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2015, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -65,6 +66,8 @@ signals:
     void avgAlphaChanged(double alpha);
     void noiseFloorChanged(int index);
     void noisePercentileChanged(int pct);
+    void tfrModeChanged(int index);
+    void reassignThresholdChanged(double dB);
 
 public slots:
     void timeSelectionChanged(float time, float offset);
@@ -174,4 +177,7 @@ public:
     QComboBox *noiseFloorCombo;
     QSpinBox *noisePercentileSpin;
     QLabel *noisePercentileLabel;
+    QComboBox *tfrModeCombo;
+    QDoubleSpinBox *reassignThresholdSpin;
+    QLabel *reassignThresholdLabel;
 };

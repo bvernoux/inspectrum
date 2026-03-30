@@ -1,6 +1,7 @@
 /*
  *  Copyright (C) 2015, Mike Walters <mike@flomp.net>
  *  Copyright (C) 2015, Jared Boone <jared@sharebrained.com>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -33,6 +34,7 @@
 #include "averaging.h"
 #include "colormaps.h"
 #include "noisefloor.h"
+#include "reassigned.h"
 #include "util.h"
 #include "windowfunctions.h"
 
@@ -271,6 +273,43 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
     connect(colormapCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &SpectrogramControls::colormapChanged);
 
+    /* ---- TFR mode (Standard / Reassigned / Synchrosqueezed) ---- */
+    tfrModeCombo = new QComboBox(widget);
+    for (int i = 0; i < tfrModeCount(); i++)
+        tfrModeCombo->addItem(tfrModeName(static_cast<TFRMode>(i)));
+    tfrModeCombo->setCurrentIndex(0); /* Standard */
+    tfrModeCombo->setToolTip(
+        "Standard: normal STFT spectrogram\n"
+        "Reassigned: 3x FFTs, sharper chirps (use overlap >= 50%)\n"
+        "Synchrosqueezed: 2x FFTs, sharper frequency");
+    layout->addRow(new QLabel(tr("TFR mode:")), tfrModeCombo);
+    connect(tfrModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &SpectrogramControls::tfrModeChanged);
+
+    /* Reassignment energy threshold (visible for non-Standard modes) */
+    reassignThresholdSpin = new QDoubleSpinBox(widget);
+    reassignThresholdSpin->setRange(1.0, 120.0);
+    reassignThresholdSpin->setValue(40.0);
+    reassignThresholdSpin->setSingleStep(5.0);
+    reassignThresholdSpin->setDecimals(0);
+    reassignThresholdSpin->setSuffix(" dB");
+    reassignThresholdSpin->setToolTip(
+        "Bins below (peak - threshold) dB are not reassigned.\n"
+        "Lower = less noise scatter, but may hide weak signals.\n"
+        "Higher = more sensitive, but more noise dots.");
+    reassignThresholdLabel = new QLabel(tr("Reassign threshold:"));
+    layout->addRow(reassignThresholdLabel, reassignThresholdSpin);
+    reassignThresholdLabel->setVisible(false);
+    reassignThresholdSpin->setVisible(false);
+    connect(reassignThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &SpectrogramControls::reassignThresholdChanged);
+    connect(tfrModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int idx) {
+        bool isAdvanced = (static_cast<TFRMode>(idx) != TFRMode::Standard);
+        reassignThresholdLabel->setVisible(isAdvanced);
+        reassignThresholdSpin->setVisible(isAdvanced);
+    });
+
     powerMaxSlider = new QSlider(Qt::Horizontal, widget);
     powerMaxSlider->setRange(-150, 20);
     powerMaxLabel = new QLabel(tr("Power max (dBFS):"));
@@ -497,6 +536,10 @@ SpectrogramControls::SpectrogramControls(const QString & title, QWidget * parent
             this, [this](int) { markSettingsDirty(); });
     connect(noisePercentileSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int) { markSettingsDirty(); });
+    connect(tfrModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) { markSettingsDirty(); });
+    connect(reassignThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, [this](double) { markSettingsDirty(); });
 }
 
 void SpectrogramControls::clearCursorLabels()
@@ -544,6 +587,9 @@ void SpectrogramControls::setDefaults()
     avgAlphaSpin->setValue(settings.value("AvgAlpha", 0.1).toDouble());
     noiseFloorCombo->setCurrentIndex(settings.value("NoiseFloor", 0).toInt());
     noisePercentileSpin->setValue(settings.value("NoisePercentile", 20).toInt());
+    /* TFR mode always starts at Standard (not persisted in QSettings) */
+    tfrModeCombo->setCurrentIndex(0);
+    reassignThresholdSpin->setValue(settings.value("ReassignThreshold", 40.0).toDouble());
 
     emit fftSizeSlider->valueChanged(fftSizeSlider->value());
     emit zoomLevelSlider->valueChanged(zoomLevelSlider->value());
@@ -562,6 +608,8 @@ void SpectrogramControls::setDefaults()
     emit avgAlphaChanged(avgAlphaSpin->value());
     emit noiseFloorChanged(noiseFloorCombo->currentIndex());
     emit noisePercentileChanged(noisePercentileSpin->value());
+    emit tfrModeChanged(tfrModeCombo->currentIndex());
+    emit reassignThresholdChanged(reassignThresholdSpin->value());
 }
 
 void SpectrogramControls::fftOrZoomChanged(void)
@@ -595,6 +643,8 @@ void SpectrogramControls::flushSettings()
     settings.setValue("AvgAlpha", avgAlphaSpin->value());
     settings.setValue("NoiseFloor", noiseFloorCombo->currentIndex());
     settings.setValue("NoisePercentile", noisePercentileSpin->value());
+    /* TFR mode not persisted (experimental) */
+    settings.setValue("ReassignThreshold", reassignThresholdSpin->value());
 }
 
 void SpectrogramControls::fftSizeChanged(int value)

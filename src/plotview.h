@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2015-2016, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -110,6 +111,8 @@ public slots:
     void setAveragingAlpha(double alpha);
     void setNoiseFloorMethod(int index);
     void setNoiseFloorPercentile(int pct);
+    void setTFRMode(int index);
+    void setReassignThreshold(double dB);
 
 protected:
     void mouseMoveEvent(QMouseEvent *event) override;

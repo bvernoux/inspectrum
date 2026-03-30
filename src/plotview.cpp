@@ -1,5 +1,6 @@
 /*
  *  Copyright (C) 2015-2016, Mike Walters <mike@flomp.net>
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
  *
  *  This file is part of inspectrum.
  *
@@ -1494,6 +1495,18 @@ void PlotView::setNoiseFloorPercentile(int pct)
 {
     if (spectrogramPlot != nullptr)
         spectrogramPlot->setNoiseFloorPercentile(pct);
+}
+
+void PlotView::setTFRMode(int index)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setTFRMode(index);
+}
+
+void PlotView::setReassignThreshold(double dB)
+{
+    if (spectrogramPlot != nullptr)
+        spectrogramPlot->setReassignThreshold(dB);
 }
 
 void PlotView::jumpToBookmark(double timeSec, double freqHz)

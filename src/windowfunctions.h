@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Window function library for inspectrum ng.
  *  Precomputed coefficient generation for common spectral windows.
  *

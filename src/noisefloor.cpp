@@ -1,4 +1,6 @@
 /*
+ *  Copyright (C) 2026, Benjamin Vernoux <bvernoux@hydrasdr.com>
+ *
  *  Noise floor estimation and subtraction for inspectrum ng.
  *
  *  This program is free software: you can redistribute it and/or modify

@@ -1,7 +1,7 @@
-inspectrum ng v0.5.1
+inspectrum ng v0.5.2
 ====================
 
-Fork of inspectrum with 52 files changed (~5500 lines added).
+Fork of inspectrum v0.4.0 with 131 files changed (~18500 lines added).
 
 Features (v0.5.0)
 ------------------
@@ -57,6 +57,29 @@ New features (v0.5.1) — Advanced Spectrogram & Signal Analysis
 33. Controls dock sized to fit at launch (user can shrink freely)
 34. Window starts at 50% screen width, 80% height, centered
 
+New features (v0.5.2) — Reassigned Spectrogram & Quality
+---------------------------------------------------------
+35. Reassigned spectrogram
+    - 3 FFTs per column (h, t*h, h') with energy redistribution
+      to local time-frequency centroids (Auger & Flandrin 1995)
+    - Pure tone: 12x sharper than standard STFT (12 bins -> 1 bin)
+    - Chirp signals: 37% energy concentration improvement
+    - Configurable energy threshold (1-120 dB below peak)
+    - Based on Auger & Flandrin 1995 (IEEE TSP)
+36. Synchrosqueezed spectrogram
+    - 2 FFTs per column (h, h'), frequency-only reassignment
+    - Preserves time grid (invertible transform)
+    - Same frequency sharpening as reassigned, 33% cheaper
+37. TracePlot min/max decimation
+    - Fixes missing vertical segments at all zoom levels
+    - For each pixel column: draws min-to-max vertical line
+    - Preserves OOK edges, FSK steps, fast transitions
+    - Original code drew 1 sample per pixel (lost peaks when zoomed out)
+
+New files (v0.5.2)
+------------------
+- reassigned.h/cpp       — reassigned & synchrosqueezed TFR engine
+
 New files (v0.5.1)
 ------------------
 - windowfunctions.h/cpp  — 6 window types with precomputed coefficients
@@ -64,20 +87,23 @@ New files (v0.5.1)
 - noisefloor.h/cpp       — per-bin noise floor estimation & subtraction
 - averaging.h/cpp        — 5 averaging modes with monotonic deque optimization
 
-UI improvements (v0.5.1)
-------------------------
+UI improvements (v0.5.1+)
+-------------------------
+- TFR mode combo (Standard / Reassigned / Synchrosqueezed)
+- Reassign threshold spin (visible only for non-Standard modes)
 - Avg mode combo shows/hides relevant sub-controls (slider, alpha spin)
 - Kaiser beta spin visible only when Kaiser window selected
 - Noise percentile spin visible only when percentile mode selected
 - In-app note explaining derived plot independence from FFT settings
 - All new settings persisted in QSettings and .isession files
+- TFR mode always starts at Standard (experimental, not persisted in QSettings)
 
 Display: dynamic slider labels, render time stats (min/avg/max),
 native platform style (windowsvista/Fusion), SI formatted values,
 controls rearranged by workflow.
 
-Performance (v0.5.1)
---------------------
+Performance
+-----------
 - FFTW plan cache (FFTW_MEASURE + wisdom persistence + pre-warm at startup)
 - Deferred tuner/zoom updates, ThresholdPlot bit cache, debounced QSettings writes
 - Pre-allocated reusable buffers (FFT tile, sample, linear, liquid-dsp objects)
@@ -97,6 +123,12 @@ Performance (v0.5.1)
 - Three-level tile cache: fftCache -> enhancedCache -> pixmapCache
 - QPixmapCache properly invalidated on stride-changing settings
 - TileCacheKey includes overlap index for correct cache isolation
+- Reassigned: ~2.5x cost of standard STFT (3 FFTs), synchrosqueezed: ~1.8x (2 FFTs)
+- Memory-mapped file I/O: 100GB+ files use ~500MB RAM regardless of size
+
+Bug fixes (v0.5.2)
+------------------
+- Noise floor: percentile interpolation (nth_element range)
 
 Bug fixes (v0.5.1)
 ------------------
@@ -125,5 +157,4 @@ MinGW: static linking (libgcc, libstdc++, -mwindows), Qt/runtime DLL bundling.
 FFTW before LIQUID link order for static libs.
 Wisdom file next to exe (fallback to AppLocalDataLocation on read-only installs).
 Portable: builds on Windows (MinGW/MSVC), Linux, macOS.
-Optional regression test target via CTest (183 tests, 60s timeout).
 Zero warnings with -Wall -Wextra -Wpedantic on GCC/MinGW.
