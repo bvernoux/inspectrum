@@ -1,7 +1,7 @@
 inspectrum ng v0.5.2
 ====================
 
-Fork of inspectrum v0.4.0 with 131 files changed (~18500 lines added).
+Fork of inspectrum v0.4.0 with 56 files changed (~6800 lines added).
 
 Features (v0.5.0)
 ------------------
