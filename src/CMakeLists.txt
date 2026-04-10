@@ -12,6 +12,9 @@ if (MSVC)
     #enable math definitions in math.h
     add_definitions(-D_USE_MATH_DEFINES)
 
+    # Use static CRT (/MT) to match static Qt builds
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
     #build a graphical application without the console
     option(BUILD_WIN32 "Build win32 app, false for console" TRUE)
     if (BUILD_WIN32)
@@ -37,6 +40,7 @@ list(APPEND inspectrum_sources
     amplitudedemod.cpp
     averaging.cpp
     colormaps.cpp
+    crashlog.cpp
     cursor.cpp
     cursors.cpp
     main.cpp
@@ -89,11 +93,15 @@ target_link_libraries(inspectrum
     ${FFTW_LIBRARIES}
 )
 
-# Benchmark and test target (standalone, no GUI)
-# Only built when benchmark.cpp exists (kept local, not in repo)
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark.cpp)
+# Link dbghelp for crash log stack traces on Windows
+if (WIN32)
+    target_link_libraries(inspectrum dbghelp)
+endif()
+
+# Benchmark and test target (standalone, no GUI, local only, not in repo)
+if(EXISTS ${PROJECT_SOURCE_DIR}/tests/benchmark.cpp)
     set(bench_sources
-        benchmark.cpp
+        ${PROJECT_SOURCE_DIR}/tests/benchmark.cpp
         averaging.cpp
         colormaps.cpp
         fft.cpp
@@ -120,6 +128,17 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/benchmark.cpp)
         TIMEOUT 60
         LABELS "regression"
     )
+endif()
+
+# Crash log robustness test (local only, not in repo)
+if(EXISTS ${PROJECT_SOURCE_DIR}/tests/test_crashlog.cpp)
+    add_executable(test_crashlog EXCLUDE_FROM_ALL
+        ${PROJECT_SOURCE_DIR}/tests/test_crashlog.cpp crashlog.cpp)
+    target_include_directories(test_crashlog PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(test_crashlog ${QT_LIBS})
+    if (WIN32)
+        target_link_libraries(test_crashlog dbghelp)
+    endif()
 endif()
 
 set(INSTALL_DEFAULT_BINDIR "bin" CACHE STRING "Appended to CMAKE_INSTALL_PREFIX")

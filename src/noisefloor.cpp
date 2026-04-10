@@ -17,30 +17,34 @@
 
 /*
  * nth_element partial sort to find the value at a given rank.
- * Operates on a copy to avoid modifying the source.
+ * Caller provides a scratch buffer to avoid per-call allocation.
  */
-static float findPercentile(const float *values, int count, float pct)
+static float findPercentile(float *tmp, int count, float pct)
 {
 	if (count <= 0)
 		return 0.0f;
 	if (count == 1)
-		return values[0];
-
-	std::vector<float> tmp(values, values + count);
+		return tmp[0];
 
 	float rank = pct * 0.01f * (count - 1);
 	int lo = (int)rank;
-	int hi = lo + 1;
-	if (hi >= count)
-		hi = count - 1;
 	float frac = rank - lo;
 
-	std::nth_element(tmp.begin(), tmp.begin() + lo, tmp.end());
+	std::nth_element(tmp, tmp + lo, tmp + count);
 	float vlo = tmp[lo];
 
-	if (frac > 0.0f && hi > lo) {
-		std::nth_element(tmp.begin(), tmp.begin() + hi, tmp.end());
-		float vhi = tmp[hi];
+	if (frac > 0.0f) {
+		/* After nth_element for lo, all elements [lo+1..count) are
+		 * >= vlo.  The (lo+1)th value is the min of that partition.
+		 * Use linear scan for small remainders, nth_element for large. */
+		int remaining = count - lo - 1;
+		float vhi;
+		if (remaining <= 64)
+			vhi = *std::min_element(tmp + lo + 1, tmp + count);
+		else {
+			std::nth_element(tmp + lo + 1, tmp + lo + 1, tmp + count);
+			vhi = tmp[lo + 1];
+		}
 		return vlo + frac * (vhi - vlo);
 	}
 	return vlo;
@@ -52,10 +56,6 @@ void estimateNoiseFloor(const float *data, int n_freq, int n_time,
 {
 	if (n_freq <= 0 || n_time <= 0)
 		return;
-
-	/* Gather values for each frequency bin across all time columns.
-	 * Data layout is column-major: data[col * n_freq + bin]. */
-	std::vector<float> binValues(n_time);
 
 	float pct;
 	switch (method) {
@@ -73,6 +73,12 @@ void estimateNoiseFloor(const float *data, int n_freq, int n_time,
 		return;
 	}
 
+	/* Single scratch buffer reused across all frequency bins
+	 * (avoids n_freq heap allocations). */
+	std::vector<float> binValues(n_time);
+
+	/* Gather values for each frequency bin across all time columns.
+	 * Data layout is column-major: data[col * n_freq + bin]. */
 	for (int f = 0; f < n_freq; f++) {
 		for (int t = 0; t < n_time; t++)
 			binValues[t] = data[(size_t)t * n_freq + f];

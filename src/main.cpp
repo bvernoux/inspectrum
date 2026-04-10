@@ -23,12 +23,17 @@
 #include <QProgressDialog>
 #include <QStyleFactory>
 
+#include "crashlog.h"
 #include "fft.h"
 #include "mainwindow.h"
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+
+    CrashLog::init(APP_NAME, APP_VERSION);
+    CrashLog::installCrashHandlers();
+    CrashLog::log(CrashLog::LOG_INFO, "Application started");
 
     /* use native platform style for modern look */
     if (QStyleFactory::keys().contains("windowsvista"))
@@ -105,5 +110,6 @@ int main(int argc, char *argv[])
     int ret = a.exec();
     FFT::saveWisdom();
     FFT::cleanup();
+    CrashLog::log(CrashLog::LOG_INFO, "Application exited cleanly (code %d)", ret);
     return ret;
 }

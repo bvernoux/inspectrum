@@ -20,12 +20,14 @@
 #pragma once
 
 #include "samplebuffer.h"
+#include <QMutex>
 #include <liquid/liquid.h>
 #include <vector>
 
 class TunerTransform : public SampleBuffer<std::complex<float>, std::complex<float>>
 {
 private:
+    QMutex paramMutex;  /* protects frequency/taps/gain/filter vs worker threads */
     float frequency;
     float bandwidth;
     float gain = 1.0f;

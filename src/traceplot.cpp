@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include "crashlog.h"
 #include "samplesource.h"
 #include "traceplot.h"
 
@@ -115,7 +116,13 @@ void TracePlot::drawTile(QString key, const QRect &rect, range_t<size_t> sampleR
         painter.setPen(Qt::green);
         plotTrace(painter, rect, samples.get(), length, 1);
     } else {
-        throw std::runtime_error("TracePlot::paintMid: Unsupported source type");
+        CrashLog::log(CrashLog::LOG_ERROR,
+                       "TracePlot::drawTile: unsupported source type '%s' "
+                       "(this=%p) -- tile skipped",
+                       sampleSource ? sampleSource->sampleType().name()
+                                    : "(null)",
+                       (void *)this);
+        return;
     }
 
     emit imageReady(key, image);

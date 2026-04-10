@@ -47,6 +47,25 @@ void TunerTransform::rebuildFilter()
 
 void TunerTransform::work(void *input, void *output, int count, size_t sampleid)
 {
+    /*
+     * Snapshot parameters under lock, then release before heavy
+     * computation.  The setters only touch frequency/taps/gain/
+     * filterDirty, so we copy what we need and let the UI thread
+     * proceed while we compute.
+     */
+    float freq;
+    float g;
+    {
+        QMutexLocker lock(&paramMutex);
+        freq = frequency;
+        g = gain;
+
+        /* rebuild filter if taps changed (must be under lock
+         * because rebuildFilter reads taps vector) */
+        if (filterDirty)
+            rebuildFilter();
+    }
+
     auto out = static_cast<std::complex<float>*>(output);
 
     /* grow mix buffer if needed (no realloc if already large enough) */
@@ -54,18 +73,16 @@ void TunerTransform::work(void *input, void *output, int count, size_t sampleid)
         mixBuf.resize(count);
 
     /* mix down using pre-allocated NCO */
-    nco_crcf_set_phase(nco, fmodf(frequency * sampleid, Tau));
-    nco_crcf_set_frequency(nco, frequency);
+    nco_crcf_set_phase(nco, fmodf(freq * sampleid, Tau));
+    nco_crcf_set_frequency(nco, freq);
     nco_crcf_mix_block_down(nco,
                             static_cast<std::complex<float>*>(input),
                             mixBuf.data(),
                             count);
 
-    /* rebuild filter if taps changed, otherwise just reset state */
-    if (filterDirty)
-        rebuildFilter();
-    else
-        firfilt_crcf_reset(filter);
+    /* reset filter state (no lock needed -- filter object is only
+     * used by worker threads serialised via SampleBuffer::mutex) */
+    firfilt_crcf_reset(filter);
 
     /* filter */
     for (int i = 0; i < count; i++) {
@@ -74,34 +91,39 @@ void TunerTransform::work(void *input, void *output, int count, size_t sampleid)
     }
 
     /* apply gain */
-    if (gain != 1.0f) {
+    if (g != 1.0f) {
         for (int i = 0; i < count; i++)
-            out[i] *= gain;
+            out[i] *= g;
     }
 }
 
 void TunerTransform::setFrequency(float frequency)
 {
+    QMutexLocker lock(&paramMutex);
     this->frequency = frequency;
 }
 
 void TunerTransform::setTaps(std::vector<float> taps)
 {
+    QMutexLocker lock(&paramMutex);
     this->taps = taps;
     filterDirty = true;
 }
 
 void TunerTransform::setGain(float g)
 {
+    QMutexLocker lock(&paramMutex);
     this->gain = g;
 }
 
 float TunerTransform::relativeBandwidth() {
+    QMutexLocker lock(&paramMutex);
     return bandwidth;
 }
 
 void TunerTransform::setRelativeBandwith(float bandwidth)
 {
+    QMutexLocker lock(&paramMutex);
     this->bandwidth = bandwidth;
 }
 

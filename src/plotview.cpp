@@ -21,6 +21,7 @@
 #include "plotview.h"
 #include <climits>
 #include "amplitudedemod.h"
+#include "crashlog.h"
 #include "frequencydemod.h"
 #include "phasedemod.h"
 #include <liquid/liquid.h>
@@ -76,8 +77,22 @@ PlotView::PlotView(InputSource *input) : cursors(this), viewRange({0, 0})
     mainSampleSource->subscribe(this);
 }
 
+PlotView::~PlotView()
+{
+    /* Wait for in-flight TracePlot tile render tasks before
+     * destroying the plots they reference (use-after-free fix). */
+    QPixmapCache::clear();
+    QThreadPool::globalInstance()->waitForDone();
+}
+
 void PlotView::addPlot(Plot *plot)
 {
+    if (!plot) {
+        CrashLog::log(CrashLog::LOG_ERROR,
+                       "addPlot() called with nullptr -- ignoring "
+                       "(plot creator returned null for current source)");
+        return;
+    }
     plots.emplace_back(plot);
     connect(plot, &Plot::repaint, this, &PlotView::repaint);
     updateThresholdPlots();
@@ -156,7 +171,17 @@ void PlotView::contextMenuEvent(QContextMenuEvent * event)
         connect(
             action, &QAction::triggered,
             this, [=]() {
-                addPlot(plotCreator(src));
+                Plot *newPlot = plotCreator(src);
+                if (!newPlot) {
+                    CrashLog::log(CrashLog::LOG_ERROR,
+                                   "Plot creator '%s' returned nullptr "
+                                   "(parentIdx=%d, sampleType=%s)",
+                                   typeName.toUtf8().constData(),
+                                   parentIdx,
+                                   src->sampleType().name());
+                    return;
+                }
+                addPlot(newPlot);
                 derivedPlotInfos.push_back({parentIdx, typeName});
             }
         );
@@ -1378,10 +1403,10 @@ void PlotView::restoreViewPosition(double timeSec, double freqHz)
         int zoomY = spectrogramPlot->getZoomY();
         int yTop = spectrogramPlot->getVisibleBinTop();
 
-        /* freq → FFT bin */
+        /* freq -> FFT bin */
         double centerBin = (0.5 - freqHz / sampleRate) * fft;
 
-        /* bin → pixel (inverse of save formula):
+        /* bin -> pixel (inverse of save formula):
          * pixel = (centerBin - yTop) * plotHeight * yZoomLevel / fft */
         int vCenter;
         if (fft > 0)
@@ -1414,7 +1439,7 @@ void PlotView::setFFTAndZoom(int size, int zoom)
      *
      * B) Everything else (FFT change, zoom-from-slider, or both):
      *    Preserve the (time, freq) at the viewport center.
-     *    Use save → change → updateView(false) → restore.
+     *    Use save -> change -> updateView(false) -> restore.
      */
     bool useMouseAnchor = wheelZoom && zoomChanged && !fftChanged;
 
@@ -2008,7 +2033,16 @@ void PlotView::restoreSessionPlots(const QJsonArray &plotsArray)
         auto compatible = as_range(Plots::plots.equal_range(src->sampleType()));
         for (auto p : compatible) {
             if (typeName == p.second.name) {
-                addPlot(p.second.creator(src));
+                Plot *newPlot = p.second.creator(src);
+                if (!newPlot) {
+                    CrashLog::log(CrashLog::LOG_ERROR,
+                                   "restoreSessionPlots: creator '%s' "
+                                   "returned nullptr (parentIdx=%d)",
+                                   typeName.toUtf8().constData(),
+                                   parentIdx);
+                    break;
+                }
+                addPlot(newPlot);
                 derivedPlotInfos.push_back({parentIdx, typeName});
                 break;
             }

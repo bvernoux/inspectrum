@@ -52,6 +52,7 @@ class PlotView : public QGraphicsView, Subscriber
 
 public:
     PlotView(InputSource *input);
+    ~PlotView();
     void setSampleRate(double rate);
 
 signals:

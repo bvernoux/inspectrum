@@ -131,10 +131,18 @@ jobs:
         cd /tmp
         git clone --depth 1 https://github.com/bvernoux/liquid-dsp.git
         cd liquid-dsp
+        # Cap SIMD at AVX2 (no AVX-512) so the binary runs on all
+        # x86-64 CPUs from ~2013 onwards.
+        # GitHub Actions runners have AVX-512 capable CPUs, but end-users may not.
         cmake -B build -G Ninja \
           -DCMAKE_INSTALL_PREFIX=/mingw64 \
           -DCMAKE_BUILD_TYPE=Release \
-          -DBUILD_SHARED_LIBS=OFF
+          -DBUILD_SHARED_LIBS=OFF \
+          -DFIND_SIMD=OFF \
+          -DENABLE_SIMD=ON \
+          -DC_AVX512_FOUND=FALSE \
+          -DC_AVX2_FOUND=TRUE \
+          -DC_AVX2_FLAGS="-mavx2;-mfma;-mf16c"
         cmake --build build
         cmake --install build
         cp include/liquid_vla.h include/liquid_msvc_compat.h \

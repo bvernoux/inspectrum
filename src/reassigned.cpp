@@ -51,10 +51,10 @@ static std::complex<float> *computeColumn(
 	const float *win,
 	std::complex<float> *fftBuf)
 {
-	ssize_t start = (ssize_t)centerSample - windowSize / 2;
+	ptrdiff_t start = (ptrdiff_t)centerSample - windowSize / 2;
 
 	for (int i = 0; i < windowSize; i++) {
-		ssize_t idx = start + i;
+		ptrdiff_t idx = start + i;
 		if (idx < 0 || (size_t)idx >= nSamples) {
 			fftBuf[i] = {0.0f, 0.0f};
 		} else {

@@ -498,7 +498,7 @@ float* SpectrogramPlot::getFFTTile(size_t tile)
         /* reassigned or synchrosqueezed: read raw samples for tile,
          * then delegate to the reassignment engine */
         size_t samplesNeeded = (size_t)(lpt - 1) * getStride() + windowSize;
-        ssize_t readStart = (ssize_t)tile - windowSize / 2;
+        ptrdiff_t readStart = (ptrdiff_t)tile - windowSize / 2;
         if (readStart < 0) readStart = 0;
         size_t readLen = samplesNeeded + windowSize;
 
@@ -549,8 +549,8 @@ void SpectrogramPlot::getLine(float *dest, size_t sample)
 #endif
         /* read windowSize samples centered on 'sample' into reusable buffer */
         const auto first_sample = std::max(
-            static_cast<ssize_t>(sample) - windowSize / 2,
-            static_cast<ssize_t>(0));
+            static_cast<ptrdiff_t>(sample) - windowSize / 2,
+            static_cast<ptrdiff_t>(0));
         if (!inputSource->getSamples(first_sample, windowSize, sampleBuf.get())) {
             auto neg_infinity = -1 * std::numeric_limits<float>::infinity();
             for (int i = 0; i < fftSize; i++, dest++)
